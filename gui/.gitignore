@@ -7,6 +7,51 @@
 
 # testing
 /coverage
+/tests/
+/test-results/
+/playwright-report/
+test_*.js
+debug_*.js
+*_test.js
+comprehensive_gui_test.js
+simple_navigation_test.js
+form_issues_test.js
+simple_deletion_test.js
+simple_table_check.js
+simple_form_debug.js
+verify_gui_*.js
+check_*.js
+analyze_schema.js
+inspect_database_schema.js
+list_all_tables.js
+playwright.config.js
+playwright.config.minimal.js
+test-results.json
+*.spec.js
+
+# documentation and logs
+*.md
+*.log
+*.pid
+dev.log
+dev.pid
+server.log
+
+# screenshots and media
+*.png
+*.webm
+*.mp4
+*.gif
+*.jpg
+*.jpeg
+
+# build artifacts
+/out/
+*.tsbuildinfo
+
+# temporary files
+console-error-report.json
+WorkCellForm_FIXED.tsx
 
 # next.js
 /.next/
