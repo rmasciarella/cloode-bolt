@@ -131,7 +131,7 @@ export function generateTimeSlots(): TimeSlot[] {
 export const SHIFT_PRESETS = {
   MORNING: { start: 32, end: 64, name: '8:00 AM - 4:00 PM' }, // 8 AM to 4 PM
   AFTERNOON: { start: 56, end: 88, name: '2:00 PM - 10:00 PM' }, // 2 PM to 10 PM  
-  NIGHT: { start: 88, end: 24, name: '10:00 PM - 6:00 AM' }, // 10 PM to 6 AM (next day)
+  NIGHT: { start: 88, end: 120, name: '10:00 PM - 6:00 AM' }, // 10 PM to 6 AM (next day)
   FULL_DAY: { start: 0, end: 95, name: '12:00 AM - 11:45 PM' }, // Full day
   BUSINESS: { start: 36, end: 68, name: '9:00 AM - 5:00 PM' }, // 9 AM to 5 PM
 } as const;

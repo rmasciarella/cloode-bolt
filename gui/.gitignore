@@ -5,11 +5,13 @@
 /.pnp
 .pnp.js
 
-# testing
+# testing artifacts (keep test files but ignore reports)
 /coverage
-/tests/
 /test-results/
 /playwright-report/
+test-results.json
+
+# debugging scripts (temporary files only)
 test_*.js
 debug_*.js
 *_test.js
@@ -24,20 +26,15 @@ check_*.js
 analyze_schema.js
 inspect_database_schema.js
 list_all_tables.js
-playwright.config.js
-playwright.config.minimal.js
-test-results.json
-*.spec.js
 
-# documentation and logs
-*.md
+# logs
 *.log
 *.pid
 dev.log
 dev.pid
 server.log
 
-# screenshots and media
+# screenshots and media (debugging artifacts)
 *.png
 *.webm
 *.mp4
@@ -51,7 +48,10 @@ server.log
 
 # temporary files
 console-error-report.json
-WorkCellForm_FIXED.tsx
+error_report.json
+error_test_*.json
+*_FIXED.tsx
+*.sql
 
 # next.js
 /.next/

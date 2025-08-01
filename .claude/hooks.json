@@ -1,0 +1,100 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command", 
+            "command": "$CLAUDE_PROJECT_DIR/.claude/scripts/validate-python.sh '${TOOL_ARGS}'"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/scripts/validate-python.sh '${TOOL_ARGS}'"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '🔧 Bash: ${TOOL_ARGS}'"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd $CLAUDE_PROJECT_DIR && if [[ '${TOOL_ARGS}' == *.py ]]; then echo '🐍 Auto-formatting Python file...' && uv run ruff format '${TOOL_ARGS}' 2>/dev/null && echo '✅ Formatted'; fi"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit", 
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd $CLAUDE_PROJECT_DIR && if [[ '${TOOL_ARGS}' == *.py ]]; then echo '🐍 Auto-formatting Python file...' && uv run ruff format '${TOOL_ARGS}' 2>/dev/null && echo '✅ Formatted'; fi"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [[ '${TOOL_ARGS}' == *'make lint'* ]] || [[ '${TOOL_ARGS}' == *'pytest'* ]] || [[ '${TOOL_ARGS}' == *'npm run'* ]]; then echo '🎯 Quality check completed'; fi"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": ".*(gui|GUI|next|react|typescript|tailwind|form).*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '💻 GUI context: Next.js app in gui/ directory with forms, components, and Playwright tests'"
+          }
+        ]
+      },
+      {
+        "matcher": ".*(test|Test|TEST|pytest|spec|testing).*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '🧪 Testing context: Python tests with pytest + coverage, GUI tests with Playwright'"
+          }
+        ]
+      },
+      {
+        "matcher": ".*(constraint|solver|optimization|ortools|cp-sat).*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '🏭 Solver context: OR-Tools CP-SAT with template-based scheduling, 3-phase optimization'"
+          }
+        ]
+      },
+      {
+        "matcher": ".*(hook|Hook|HOOK).*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '🪝 Claude Code hooks active - See .claude/hooks.json for configuration'"
+          }
+        ]
+      }
+    ]
+  }
+}

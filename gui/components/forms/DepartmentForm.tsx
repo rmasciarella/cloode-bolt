@@ -1,8 +1,11 @@
 "use client"
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useForm } from 'react-hook-form'
-import { supabase } from '@/lib/supabase'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { departmentService } from '@/lib/services'
+import { departmentFormSchema, type DepartmentFormData } from '@/lib/schemas'
+import { Database } from '@/lib/database.types'
 import { useToast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -15,30 +18,7 @@ import { TimeInput } from '@/components/ui/time-input'
 import { indexToTime12, getTimeRangeDescription } from '@/lib/timeUtils'
 import { Loader2, Plus, Edit, Trash2 } from 'lucide-react'
 
-type Department = {
-  department_id: string
-  code: string
-  name: string
-  description: string | null
-  parent_department_id: string | null
-  cost_center: string | null
-  default_shift_start: number
-  default_shift_end: number
-  overtime_allowed: boolean
-  is_active: boolean
-}
-
-type DepartmentFormData = {
-  code: string
-  name: string
-  description: string
-  parent_department_id: string
-  cost_center: string
-  default_shift_start: number
-  default_shift_end: number
-  overtime_allowed: boolean
-  is_active: boolean
-}
+type Department = Database['public']['Tables']['departments']['Row']
 
 export default function DepartmentForm() {
   const [departments, setDepartments] = useState<Department[]>([])
@@ -48,6 +28,7 @@ export default function DepartmentForm() {
   const { toast } = useToast()
 
   const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<DepartmentFormData>({
+    resolver: zodResolver(departmentFormSchema),
     defaultValues: {
       code: '',
       name: '',
@@ -61,80 +42,62 @@ export default function DepartmentForm() {
     }
   })
 
-  const fetchDepartments = async () => {
+  const fetchDepartments = useCallback(async () => {
     setLoading(true)
-    try {
-      const { data, error } = await supabase
-        .from('departments')
-        .select('*')
-        .order('code', { ascending: true })
-
-      if (error) throw error
-      setDepartments(data || [])
-    } catch (error) {
-      console.error('Error fetching departments:', error)
+    const response = await departmentService.getAll()
+    
+    if (response.success && response.data) {
+      setDepartments(response.data)
+    } else {
+      console.error('Error fetching departments:', response.error)
       toast({
         title: "Error",
-        description: "Failed to fetch departments",
+        description: response.error || "Failed to fetch departments",
         variant: "destructive"
       })
-    } finally {
-      setLoading(false)
     }
-  }
+    setLoading(false)
+  }, [toast])
 
   useEffect(() => {
     fetchDepartments()
-  }, [])
+  }, [fetchDepartments])
 
   const onSubmit = async (data: DepartmentFormData) => {
     setIsSubmitting(true)
-    try {
-      const formData = {
-        ...data,
-        parent_department_id: data.parent_department_id === "none" ? null : data.parent_department_id || null,
-        cost_center: data.cost_center || null,
-        description: data.description || null,
-      }
+    
+    // Ensure required fields are present
+    const submitData = {
+      ...data,
+      code: data.code || '',
+      name: data.name || ''
+    }
+    
+    let response
+    if (editingId) {
+      response = await departmentService.update(editingId, submitData)
+    } else {
+      response = await departmentService.create(submitData)
+    }
 
-      if (editingId) {
-        const { error } = await supabase
-          .from('departments')
-          .update(formData)
-          .eq('department_id', editingId)
-
-        if (error) throw error
-
-        toast({
-          title: "Success",
-          description: "Department updated successfully"
-        })
-      } else {
-        const { error } = await supabase
-          .from('departments')
-          .insert([formData])
-
-        if (error) throw error
-
-        toast({
-          title: "Success",
-          description: "Department created successfully"
-        })
-      }
-
+    if (response.success) {
+      toast({
+        title: "Success",
+        description: `Department ${editingId ? 'updated' : 'created'} successfully`
+      })
       reset()
       setEditingId(null)
       fetchDepartments()
-    } catch (error) {
-      console.error('Error saving department:', error)
+    } else {
+      console.error('Error saving department:', response.error)
       toast({
         title: "Error",
-        description: "Failed to save department",
+        description: response.error || "Failed to save department",
         variant: "destructive"
       })
-    } finally {
-      setIsSubmitting(false)
     }
+    
+    setIsSubmitting(false)
   }
 
   const handleEdit = (department: Department) => {
@@ -156,38 +119,26 @@ export default function DepartmentForm() {
 
     if (!confirm(`Are you sure you want to delete "${department.name}"?\n\nThis action cannot be undone.`)) return
 
-    try {
-      const { error } = await supabase
-        .from('departments')
-        .delete()
-        .eq('department_id', id)
-
-      if (error) throw error
-
+    const response = await departmentService.delete(id)
+    
+    if (response.success) {
       toast({
         title: "Success",
         description: `Department "${department.name}" deleted successfully`
       })
       fetchDepartments()
-    } catch (error: any) {
-      console.error('Error deleting department:', error)
-      console.error('Error details:', {
-        message: error?.message,
-        details: error?.details,
-        hint: error?.hint,
-        code: error?.code
-      })
+    } else {
+      console.error('Error deleting department:', response.error)
       
-      let errorMessage = "Failed to delete department"
+      let errorMessage = response.error || "Failed to delete department"
       let errorDetails = ""
       
       // Check for common constraint violation errors
-      if (error.message?.includes('foreign key constraint') || 
-          error.code === '23503' || 
-          error.message?.includes('violates foreign key')) {
+      if (response.error?.includes('foreign key constraint') || 
+          response.error?.includes('violates foreign key')) {
         errorMessage = "Cannot delete department - it's still in use"
         errorDetails = "This department has related records (job instances, operators, etc.). Either delete those first or deactivate this department instead."
-      } else if (error.message?.includes('dependent')) {
+      } else if (response.error?.includes('dependent')) {
         errorMessage = "Cannot delete department - has dependencies"
         errorDetails = "Other departments or records depend on this one. Consider deactivating instead."
       }
@@ -209,24 +160,19 @@ export default function DepartmentForm() {
     
     if (!confirm(`Are you sure you want to ${action} "${department.name}"?`)) return
 
-    try {
-      const { error } = await supabase
-        .from('departments')
-        .update({ is_active: newStatus })
-        .eq('department_id', id)
-
-      if (error) throw error
-
+    const response = await departmentService.toggleActive(id)
+    
+    if (response.success) {
       toast({
         title: "Success",
         description: `Department "${department.name}" ${newStatus ? 'reactivated' : 'deactivated'} successfully`
       })
       fetchDepartments()
-    } catch (error: any) {
-      console.error(`Error ${action}ing department:`, error)
+    } else {
+      console.error(`Error ${action}ing department:`, response.error)
       toast({
         title: "Error",
-        description: `Failed to ${action} department`,
+        description: response.error || `Failed to ${action} department`,
         variant: "destructive"
       })
     }
@@ -312,7 +258,7 @@ export default function DepartmentForm() {
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-gray-500">
-                  <strong>For single department use:</strong> Select "None (Root Department)" to make this a top-level department.<br/>
+                  <strong>For single department use:</strong> Select &quot;None (Root Department)&quot; to make this a top-level department.<br/>
                   <strong>For hierarchy:</strong> Child departments inherit scheduling constraints from parent.
                 </p>
               </div>

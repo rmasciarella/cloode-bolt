@@ -28,7 +28,7 @@ test('Test new Template Precedences and Job Tasks forms', async ({ page }) => {
   }
   
   await page.screenshot({ 
-    path: 'test-results/new-template-precedences.png',
+    path: 'gui/test-results/new-template-precedences.png',
     fullPage: true 
   });
   
@@ -53,7 +53,7 @@ test('Test new Template Precedences and Job Tasks forms', async ({ page }) => {
   }
   
   await page.screenshot({ 
-    path: 'test-results/new-job-tasks.png',
+    path: 'gui/test-results/new-job-tasks.png',
     fullPage: true 
   });
   

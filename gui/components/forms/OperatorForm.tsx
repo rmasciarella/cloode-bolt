@@ -124,7 +124,7 @@ export default function OperatorForm() {
   useEffect(() => {
     fetchOperators()
     fetchDepartments()
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const onSubmit = async (data: OperatorFormData) => {
     setIsSubmitting(true)

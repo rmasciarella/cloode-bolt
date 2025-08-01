@@ -2,7 +2,10 @@
 
 import { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
-import { supabase } from '@/lib/supabase'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { workCellService, departmentService } from '@/lib/services'
+import { workCellFormSchema, type WorkCellFormData, cellTypes } from '@/lib/schemas'
+import { Database } from '@/lib/database.types'
 import { useToast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -12,48 +15,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Loader2, Edit, Trash2 } from 'lucide-react'
 
-type WorkCell = {
-  cell_id: string
-  name: string
-  capacity: number
-  department_id: string | null
-  wip_limit: number | null
-  target_utilization: number
-  flow_priority: number
-  floor_location: string | null
-  cell_type: string
-  is_active: boolean
-  created_at: string
-}
-
-type Department = {
-  department_id: string
-  name: string
-  code: string
-}
-
-type WorkCellFormData = {
-  name: string
-  capacity: number
-  department_id: string
-  wip_limit: number
-  flow_priority: number
-  floor_location: string
-  cell_type: string
-  target_utilization: number  // FIXED: Use single utilization field as decimal
-  calendar_id: string
-  average_throughput_per_hour: number
-  is_active: boolean
-}
-
-const cellTypes = [
-  { value: 'production', label: 'Production' },
-  { value: 'assembly', label: 'Assembly' },
-  { value: 'testing', label: 'Testing' },
-  { value: 'packaging', label: 'Packaging' },
-  { value: 'storage', label: 'Storage' },
-  { value: 'maintenance', label: 'Maintenance' }
-]
+type WorkCell = Database['public']['Tables']['work_cells']['Row']
+type Department = Database['public']['Tables']['departments']['Row']
 
 export default function WorkCellForm() {
   const [workCells, setWorkCells] = useState<WorkCell[]>([])
@@ -64,6 +27,7 @@ export default function WorkCellForm() {
   const { toast } = useToast()
 
   const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<WorkCellFormData>({
+    resolver: zodResolver(workCellFormSchema),
     defaultValues: {
       name: '',
       capacity: 1,
@@ -72,7 +36,7 @@ export default function WorkCellForm() {
       flow_priority: 1,
       floor_location: '',
       cell_type: 'production',
-      target_utilization: 0.85,  // FIXED: Store as decimal (0.85 = 85%)
+      target_utilization: 85,  // Form input expects percentage (0-100)
       calendar_id: '',
       average_throughput_per_hour: 0,
       is_active: true
@@ -81,101 +45,65 @@ export default function WorkCellForm() {
 
   const fetchWorkCells = async () => {
     setLoading(true)
-    try {
-      const { data, error } = await supabase
-        .from('work_cells')
-        .select('*')
-        .order('name', { ascending: true })
-
-      if (error) throw error
-      setWorkCells(data || [])
-    } catch (error) {
-      console.error('Error fetching work cells:', error)
+    const response = await workCellService.getAll()
+    
+    if (response.success && response.data) {
+      setWorkCells(response.data)
+    } else {
+      console.error('Error fetching work cells:', response.error)
       toast({
         title: "Error",
-        description: "Failed to fetch work cells",
+        description: response.error || "Failed to fetch work cells",
         variant: "destructive"
       })
-    } finally {
-      setLoading(false)
     }
+    setLoading(false)
   }
 
   const fetchDepartments = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('departments')
-        .select('department_id, name, code')
-        .eq('is_active', true)
-        .order('name', { ascending: true })
-
-      if (error) throw error
-      setDepartments(data || [])
-    } catch (error) {
-      console.error('Error fetching departments:', error)
+    const response = await departmentService.getAll(true) // activeOnly = true
+    
+    if (response.success && response.data) {
+      setDepartments(response.data)
+    } else {
+      console.error('Error fetching departments:', response.error)
     }
   }
 
   useEffect(() => {
     fetchWorkCells()
     fetchDepartments()
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const onSubmit = async (data: WorkCellFormData) => {
     setIsSubmitting(true)
-    try {
-      const formData = {
-        name: data.name,
-        capacity: data.capacity,
-        department_id: data.department_id || null,
-        wip_limit: data.wip_limit || null,
-        target_utilization: data.target_utilization,  // FIXED: No conversion needed
-        flow_priority: data.flow_priority,
-        floor_location: data.floor_location || null,
-        cell_type: data.cell_type,
-        calendar_id: data.calendar_id || null,  // FIXED: Include calendar_id
-        average_throughput_per_hour: data.average_throughput_per_hour || null,  // FIXED: Include throughput
-        is_active: data.is_active
-      }
+    
+    // Data is already transformed by Zod schema (percentage to decimal)
+    let response
+    if (editingId) {
+      response = await workCellService.update(editingId, data)
+    } else {
+      response = await workCellService.create(data)
+    }
 
-      if (editingId) {
-        const { error } = await supabase
-          .from('work_cells')
-          .update(formData)
-          .eq('cell_id', editingId)
-
-        if (error) throw error
-
-        toast({
-          title: "Success",
-          description: "Work cell updated successfully"
-        })
-      } else {
-        const { error } = await supabase
-          .from('work_cells')
-          .insert([formData])
-
-        if (error) throw error
-
-        toast({
-          title: "Success",
-          description: "Work cell created successfully"
-        })
-      }
-
+    if (response.success) {
+      toast({
+        title: "Success",
+        description: `Work cell ${editingId ? 'updated' : 'created'} successfully`
+      })
       reset()
       setEditingId(null)
       fetchWorkCells()
-    } catch (error) {
-      console.error('Error saving work cell:', error)
+    } else {
+      console.error('Error saving work cell:', response.error)
       toast({
         title: "Error",
-        description: "Failed to save work cell",
+        description: response.error || "Failed to save work cell",
         variant: "destructive"
       })
-    } finally {
-      setIsSubmitting(false)
     }
+    
+    setIsSubmitting(false)
   }
 
   const handleEdit = (workCell: WorkCell) => {
@@ -184,34 +112,29 @@ export default function WorkCellForm() {
     setValue('capacity', workCell.capacity)
     setValue('department_id', workCell.department_id || '')
     setValue('wip_limit', workCell.wip_limit || 0)
-    setValue('utilization_target_percent', workCell.target_utilization * 100) // Convert decimal to %
+    setValue('target_utilization', workCell.target_utilization * 100) // Convert decimal to %
     setValue('flow_priority', workCell.flow_priority)
     setValue('floor_location', workCell.floor_location || '')
-    setValue('cell_type', workCell.cell_type)
+    setValue('cell_type', workCell.cell_type as any)
     setValue('is_active', workCell.is_active)
   }
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this work cell?')) return
 
-    try {
-      const { error } = await supabase
-        .from('work_cells')
-        .delete()
-        .eq('cell_id', id)
-
-      if (error) throw error
-
+    const response = await workCellService.delete(id)
+    
+    if (response.success) {
       toast({
         title: "Success",
         description: "Work cell deleted successfully"
       })
       fetchWorkCells()
-    } catch (error) {
-      console.error('Error deleting work cell:', error)
+    } else {
+      console.error('Error deleting work cell:', response.error)
       toast({
         title: "Error",
-        description: "Failed to delete work cell",
+        description: response.error || "Failed to delete work cell",
         variant: "destructive"
       })
     }
@@ -240,10 +163,7 @@ export default function WorkCellForm() {
                 <Label htmlFor="name">Cell Name *</Label>
                 <Input
                   id="name"
-                  {...register('name', { 
-                    required: 'Cell name is required',
-                    maxLength: { value: 255, message: 'Name must be 255 characters or less' }
-                  })}
+                  {...register('name')}
                   placeholder="e.g., Production Cell A"
                 />
                 {errors.name && <p className="text-sm text-red-600">{errors.name.message}</p>}
@@ -252,14 +172,14 @@ export default function WorkCellForm() {
               {/* Cell Type */}
               <div className="space-y-2">
                 <Label htmlFor="cell_type">Cell Type</Label>
-                <Select onValueChange={(value) => setValue('cell_type', value)}>
+                <Select onValueChange={(value) => setValue('cell_type', value as typeof cellTypes[number])}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select cell type" />
                   </SelectTrigger>
                   <SelectContent>
                     {cellTypes.map((type) => (
-                      <SelectItem key={type.value} value={type.value}>
-                        {type.label}
+                      <SelectItem key={type} value={type}>
+                        {type.charAt(0).toUpperCase() + type.slice(1)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -301,10 +221,7 @@ export default function WorkCellForm() {
                   id="capacity"
                   type="number"
                   min="1"
-                  {...register('capacity', { 
-                    valueAsNumber: true,
-                    min: { value: 1, message: 'Capacity must be at least 1' }
-                  })}
+                  {...register('capacity', { valueAsNumber: true })}
                 />
                 {errors.capacity && <p className="text-sm text-red-600">{errors.capacity.message}</p>}
               </div>
@@ -316,10 +233,7 @@ export default function WorkCellForm() {
                   id="wip_limit"
                   type="number"
                   min="0"
-                  {...register('wip_limit', { 
-                    valueAsNumber: true,
-                    min: { value: 0, message: 'WIP limit must be non-negative' }
-                  })}
+                  {...register('wip_limit', { valueAsNumber: true })}
                 />
                 <p className="text-xs text-gray-500">Work-in-progress limit for constraint generation</p>
                 {errors.wip_limit && <p className="text-sm text-red-600">{errors.wip_limit.message}</p>}
@@ -334,15 +248,11 @@ export default function WorkCellForm() {
                   min="0"
                   max="100"
                   step="0.1"
-                  {...register('utilization_target_percent', { 
-                    valueAsNumber: true,
-                    min: { value: 0, message: 'Target must be between 0 and 100%' },
-                    max: { value: 100, message: 'Target must be between 0 and 100%' }
-                  })}
+                  {...register('target_utilization', { valueAsNumber: true })}
                   placeholder="85.0"
                 />
                 <p className="text-xs text-gray-500">Target capacity utilization percentage for optimization</p>
-                {errors.utilization_target_percent && <p className="text-sm text-red-600">{errors.utilization_target_percent.message}</p>}
+                {errors.target_utilization && <p className="text-sm text-red-600">{errors.target_utilization.message}</p>}
               </div>
 
               {/* Flow Priority */}

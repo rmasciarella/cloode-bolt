@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useForm } from 'react-hook-form'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/hooks/use-toast'
@@ -111,7 +111,7 @@ export default function MachineForm() {
 
   const selectedDepartmentId = watch('department_id')
 
-  const fetchMachines = async () => {
+  const fetchMachines = useCallback(async () => {
     setLoading(true)
     try {
       const { data, error } = await supabase
@@ -131,9 +131,9 @@ export default function MachineForm() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [toast])
 
-  const fetchDepartments = async () => {
+  const fetchDepartments = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('departments')
@@ -146,9 +146,9 @@ export default function MachineForm() {
     } catch (error) {
       console.error('Error fetching departments:', error)
     }
-  }
+  }, [])
 
-  const fetchWorkCells = async () => {
+  const fetchWorkCells = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('work_cells')
@@ -160,13 +160,13 @@ export default function MachineForm() {
     } catch (error) {
       console.error('Error fetching work cells:', error)
     }
-  }
+  }, [])
 
   useEffect(() => {
     fetchMachines()
     fetchDepartments()
     fetchWorkCells()
-  }, [])
+  }, [fetchMachines, fetchDepartments, fetchWorkCells])
 
   // Filter work cells based on selected department
   useEffect(() => {
@@ -480,11 +480,11 @@ export default function MachineForm() {
                   id="maintenance_window_start"
                   type="number"
                   min="0"
-                  max="96"
+                  max="95"
                   {...register('maintenance_window_start', { 
                     valueAsNumber: true,
                     min: { value: 0, message: 'Time must be non-negative' },
-                    max: { value: 96, message: 'Maximum 96 time units (24 hours)' }
+                    max: { value: 95, message: 'Maximum 95 time units (23:45)' }
                   })}
                 />
                 {errors.maintenance_window_start && <p className="text-sm text-red-600">{errors.maintenance_window_start.message}</p>}
@@ -497,11 +497,11 @@ export default function MachineForm() {
                   id="maintenance_window_end"
                   type="number"
                   min="0"
-                  max="96"
+                  max="95"
                   {...register('maintenance_window_end', { 
                     valueAsNumber: true,
                     min: { value: 0, message: 'Time must be non-negative' },
-                    max: { value: 96, message: 'Maximum 96 time units (24 hours)' }
+                    max: { value: 95, message: 'Maximum 95 time units (23:45)' }
                   })}
                 />
                 {errors.maintenance_window_end && <p className="text-sm text-red-600">{errors.maintenance_window_end.message}</p>}

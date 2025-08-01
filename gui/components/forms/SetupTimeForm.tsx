@@ -81,7 +81,7 @@ const skillLevels = [
 
 export default function SetupTimeForm() {
   const [setupTimes, setSetupTimes] = useState<SetupTime[]>([])
-  const [templateTasks, setTemplateTasks] = useState<TemplateTask[]>([])
+  const [templateTasks, setTemplateTasks] = useState<OptimizedTask[]>([])
   const [machines, setMachines] = useState<Machine[]>([])
   const [loading, setLoading] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -90,8 +90,8 @@ export default function SetupTimeForm() {
 
   const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<SetupTimeFormData>({
     defaultValues: {
-      from_template_task_id: '',
-      to_template_task_id: '',
+      from_optimized_task_id: '',
+      to_optimized_task_id: '',
       machine_resource_id: '',
       setup_time_minutes: 15,
       setup_type: 'standard',
@@ -143,10 +143,10 @@ export default function SetupTimeForm() {
       if (error) throw error
       
       const formattedTasks = data?.map(task => ({
-        template_task_id: task.optimized_task_id,
+        optimized_task_id: task.optimized_task_id,
         name: task.name,
-        template_id: task.pattern_id,
-        template_name: (task.job_optimized_patterns as any)?.name || 'Unknown Pattern'
+        pattern_id: task.pattern_id,
+        pattern_name: (task.job_optimized_patterns as any)?.name || 'Unknown Pattern'
       })) || []
       
       setTemplateTasks(formattedTasks)
@@ -174,12 +174,12 @@ export default function SetupTimeForm() {
     fetchSetupTimes()
     fetchTemplateTasks()
     fetchMachines()
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const onSubmit = async (data: SetupTimeFormData) => {
     setIsSubmitting(true)
     try {
-      if (data.from_template_task_id === data.to_template_task_id) {
+      if (data.from_optimized_task_id === data.to_optimized_task_id) {
         toast({
           title: "Error",
           description: "From and To tasks must be different",
@@ -190,8 +190,8 @@ export default function SetupTimeForm() {
       }
 
       const formData = {
-        from_template_task_id: data.from_template_task_id,
-        to_template_task_id: data.to_template_task_id,
+        from_optimized_task_id: data.from_optimized_task_id,
+        to_optimized_task_id: data.to_optimized_task_id,
         machine_resource_id: data.machine_resource_id,
         setup_time_minutes: data.setup_time_minutes,
         setup_type: data.setup_type,
@@ -247,8 +247,8 @@ export default function SetupTimeForm() {
 
   const handleEdit = (setupTime: SetupTime) => {
     setEditingId(setupTime.setup_time_id)
-    setValue('from_template_task_id', setupTime.from_template_task_id)
-    setValue('to_template_task_id', setupTime.to_template_task_id)
+    setValue('from_optimized_task_id', setupTime.from_optimized_task_id)
+    setValue('to_optimized_task_id', setupTime.to_optimized_task_id)
     setValue('machine_resource_id', setupTime.machine_resource_id)
     setValue('setup_time_minutes', setupTime.setup_time_minutes)
     setValue('setup_type', setupTime.setup_type)
@@ -303,40 +303,40 @@ export default function SetupTimeForm() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* From Template Task - Required */}
               <div className="space-y-2">
-                <Label htmlFor="from_template_task_id">From Template Task *</Label>
-                <Select onValueChange={(value) => setValue('from_template_task_id', value)}>
+                <Label htmlFor="from_optimized_task_id">From Template Task *</Label>
+                <Select onValueChange={(value) => setValue('from_optimized_task_id', value)}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select from task" />
                   </SelectTrigger>
                   <SelectContent>
                     {templateTasks.map((task) => (
-                      <SelectItem key={task.template_task_id} value={task.template_task_id}>
-                        {task.template_name} - {task.name}
+                      <SelectItem key={task.optimized_task_id} value={task.optimized_task_id}>
+                        {task.pattern_name} - {task.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                {!watch('from_template_task_id') && <p className="text-sm text-red-600">From task is required</p>}
+                {!watch('from_optimized_task_id') && <p className="text-sm text-red-600">From task is required</p>}
               </div>
 
               {/* To Template Task - Required */}
               <div className="space-y-2">
-                <Label htmlFor="to_template_task_id">To Template Task *</Label>
-                <Select onValueChange={(value) => setValue('to_template_task_id', value)}>
+                <Label htmlFor="to_optimized_task_id">To Template Task *</Label>
+                <Select onValueChange={(value) => setValue('to_optimized_task_id', value)}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select to task" />
                   </SelectTrigger>
                   <SelectContent>
                     {templateTasks
-                      .filter(task => task.template_task_id !== watch('from_template_task_id'))
+                      .filter(task => task.optimized_task_id !== watch('from_optimized_task_id'))
                       .map((task) => (
-                        <SelectItem key={task.template_task_id} value={task.template_task_id}>
-                          {task.template_name} - {task.name}
+                        <SelectItem key={task.optimized_task_id} value={task.optimized_task_id}>
+                          {task.pattern_name} - {task.name}
                         </SelectItem>
                       ))}
                   </SelectContent>
                 </Select>
-                {!watch('to_template_task_id') && <p className="text-sm text-red-600">To task is required</p>}
+                {!watch('to_optimized_task_id') && <p className="text-sm text-red-600">To task is required</p>}
               </div>
 
               {/* Machine Resource - Required */}
@@ -508,7 +508,7 @@ export default function SetupTimeForm() {
                   Cancel
                 </Button>
               )}
-              <Button type="submit" disabled={isSubmitting || !watch('from_template_task_id') || !watch('to_template_task_id') || !watch('machine_resource_id')}>
+              <Button type="submit" disabled={isSubmitting || !watch('from_optimized_task_id') || !watch('to_optimized_task_id') || !watch('machine_resource_id')}>
                 {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 {editingId ? 'Update' : 'Create'} Setup Time
               </Button>

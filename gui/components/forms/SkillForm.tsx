@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useForm } from 'react-hook-form'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/hooks/use-toast'
@@ -100,7 +100,7 @@ export default function SkillForm() {
     }
   })
 
-  const fetchSkills = async () => {
+  const fetchSkills = useCallback(async () => {
     setLoading(true)
     try {
       const { data, error } = await supabase
@@ -120,9 +120,9 @@ export default function SkillForm() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [toast])
 
-  const fetchDepartments = async () => {
+  const fetchDepartments = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('departments')
@@ -135,12 +135,12 @@ export default function SkillForm() {
     } catch (error) {
       console.error('Error fetching departments:', error)
     }
-  }
+  }, [])
 
   useEffect(() => {
     fetchSkills()
     fetchDepartments()
-  }, [])
+  }, [fetchSkills, fetchDepartments])
 
   const onSubmit = async (data: SkillFormData) => {
     setIsSubmitting(true)

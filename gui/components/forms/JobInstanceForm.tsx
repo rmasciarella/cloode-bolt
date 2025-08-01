@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useForm } from 'react-hook-form'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/hooks/use-toast'
@@ -94,7 +94,7 @@ export default function JobInstanceForm() {
     }
   })
 
-  const fetchJobInstances = async () => {
+  const fetchJobInstances = useCallback(async () => {
     setLoading(true)
     try {
       const { data, error } = await supabase
@@ -117,9 +117,9 @@ export default function JobInstanceForm() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [toast])
 
-  const fetchJobTemplates = async () => {  // FIXED: Changed from fetchJobOptimizedPatterns
+  const fetchJobTemplates = useCallback(async () => {  // FIXED: Changed from fetchJobOptimizedPatterns
     try {
       const { data, error } = await supabase
         .from('job_templates')  // FIXED: Changed from job_optimized_patterns
@@ -132,9 +132,9 @@ export default function JobInstanceForm() {
     } catch (error) {
       console.error('Error fetching job templates:', error)
     }
-  }
+  }, [])
 
-  const fetchDepartments = async () => {
+  const fetchDepartments = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('departments')
@@ -147,19 +147,20 @@ export default function JobInstanceForm() {
     } catch (error) {
       console.error('Error fetching departments:', error)
     }
-  }
+  }, [])
 
   useEffect(() => {
     fetchJobInstances()
     fetchJobTemplates()  // FIXED: Changed from fetchJobOptimizedPatterns
     fetchDepartments()
-  }, [])
+  }, [fetchJobInstances, fetchJobTemplates, fetchDepartments])
 
   const onSubmit = async (data: JobInstanceFormData) => {
     setIsSubmitting(true)
     try {
       const formData = {
-        template_id: data.template_id,  // FIXED: Changed from pattern_id
+        template_id: data.template_id,  // Backward compatibility
+        pattern_id: data.template_id,   // New optimized schema - same value for consistency
         name: data.name,
         department_id: data.department_id || null,
         priority: data.priority,

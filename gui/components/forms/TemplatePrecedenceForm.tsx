@@ -94,7 +94,7 @@ export default function TemplatePrecedenceForm() {
         
       if (fullError) throw fullError
       setTemplatePrecedences(fullData || [])
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching template precedences:', error)
       console.error('Error details:', {
         message: error?.message,
@@ -158,7 +158,7 @@ export default function TemplatePrecedenceForm() {
     fetchTemplatePrecedences()
     fetchOptimizedTasks()
     fetchPatterns()
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const onSubmit = async (data: TemplatePrecedenceFormData) => {
     setIsSubmitting(true)

@@ -2,7 +2,10 @@
 
 import { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
-import { supabase } from '@/lib/supabase'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { jobTemplateService, departmentService } from '@/lib/services'
+import { jobTemplateFormSchema, type JobTemplateFormData } from '@/lib/schemas'
+import { Database } from '@/lib/database.types'
 import { useToast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,42 +16,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Loader2, Edit, Trash2 } from 'lucide-react'
 
-type JobTemplate = {
-  pattern_id: string
-  name: string
-  description: string | null
-  task_count: number
-  total_min_duration_minutes: number
-  critical_path_length_minutes: number
-  baseline_performance_seconds: number | null
-  optimized_performance_seconds: number | null
-  speedup_factor: number | null
-  last_benchmarked_at: string | null
-  performance_target_seconds: number | null
-  solver_parameters: any
-  optimization_techniques_applied: string[] | null
-  symmetry_breaking_enabled: boolean
-  redundant_constraints_count: number
-  is_blessed: boolean
-  is_active: boolean
-  created_at: string
-  updated_at: string
-}
-
-type Department = {
-  department_id: string
-  name: string
-  code: string
-}
-
-type JobTemplateFormData = {
-  name: string
-  description: string
-  solver_parameters: string
-  task_count: number
-  total_min_duration_minutes: number
-  critical_path_length_minutes: number
-}
+type JobTemplate = Database['public']['Tables']['job_optimized_patterns']['Row']
+type Department = Database['public']['Tables']['departments']['Row']
 
 const defaultSolverParameters = {
   "num_search_workers": 8,
@@ -67,7 +36,8 @@ export default function JobTemplateForm() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const { toast } = useToast()
 
-  const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<JobTemplateFormData>({
+  const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm({
+    resolver: zodResolver(jobTemplateFormSchema),
     defaultValues: {
       name: '',
       description: '',
@@ -80,116 +50,85 @@ export default function JobTemplateForm() {
 
   const fetchJobTemplates = async () => {
     setLoading(true)
-    try {
-      const { data, error } = await supabase
-        .from('job_optimized_patterns')
-        .select('*')
-        .order('name', { ascending: true })
-
-      if (error) throw error
-      setJobTemplates(data || [])
-    } catch (error) {
-      console.error('Error fetching job templates:', error)
+    const response = await jobTemplateService.getAll()
+    
+    if (response.success && response.data) {
+      setJobTemplates(response.data)
+    } else {
+      console.error('Error fetching job templates:', response.error)
       toast({
         title: "Error",
-        description: "Failed to fetch job templates",
+        description: response.error || "Failed to fetch job templates",
         variant: "destructive"
       })
-    } finally {
-      setLoading(false)
     }
+    setLoading(false)
   }
 
   const fetchDepartments = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('departments')
-        .select('department_id, name, code')
-        .eq('is_active', true)
-        .order('name', { ascending: true })
-
-      if (error) throw error
-      setDepartments(data || [])
-    } catch (error) {
-      console.error('Error fetching departments:', error)
+    const response = await departmentService.getAll(true) // activeOnly = true
+    
+    if (response.success && response.data) {
+      setDepartments(response.data)
+    } else {
+      console.error('Error fetching departments:', response.error)
     }
   }
 
   useEffect(() => {
     fetchJobTemplates()
     fetchDepartments()
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const onSubmit = async (data: JobTemplateFormData) => {
+  const onSubmit = async (data: any) => {
     setIsSubmitting(true)
-    try {
-      // Validate JSON
-      let parsedSolverParameters
-      try {
-        parsedSolverParameters = JSON.parse(data.solver_parameters)
-      } catch (e) {
-        toast({
-          title: "Error",
-          description: "Solver parameters must be valid JSON",
-          variant: "destructive"
-        })
-        setIsSubmitting(false)
-        return
-      }
+    
+    // Validate solver parameters using the service
+    const validationResponse = await jobTemplateService.validateSolverParameters(data.solver_parameters)
+    if (!validationResponse.success) {
+      toast({
+        title: "Error",
+        description: validationResponse.error || "Invalid solver parameters",
+        variant: "destructive"
+      })
+      setIsSubmitting(false)
+      return
+    }
 
-      const formData = {
-        name: data.name,
-        description: data.description || null,
-        solver_parameters: parsedSolverParameters,
-        task_count: data.task_count,
-        total_min_duration_minutes: data.total_min_duration_minutes,
-        critical_path_length_minutes: data.critical_path_length_minutes
-      }
+    const formData = {
+      name: data.name,
+      description: data.description || null,
+      solver_parameters: data.solver_parameters, // Already parsed by Zod schema
+      task_count: data.task_count,
+      total_min_duration_minutes: data.total_min_duration_minutes,
+      critical_path_length_minutes: data.critical_path_length_minutes
+    }
 
-      if (editingId) {
-        const { error } = await supabase
-          .from('job_optimized_patterns')
-          .update(formData)
-          .eq('pattern_id', editingId)
+    let response
+    if (editingId) {
+      response = await jobTemplateService.update(editingId, formData)
+    } else {
+      response = await jobTemplateService.create(formData)
+    }
 
-        if (error) throw error
-
-        toast({
-          title: "Success",
-          description: "Job template updated successfully"
-        })
-      } else {
-        const { error } = await supabase
-          .from('job_optimized_patterns')
-          .insert([formData])
-
-        if (error) throw error
-
-        toast({
-          title: "Success",
-          description: "Job template created successfully"
-        })
-      }
-
+    if (response.success) {
+      toast({
+        title: "Success",
+        description: `Job template ${editingId ? 'updated' : 'created'} successfully`
+      })
       reset()
       setEditingId(null)
       fetchJobTemplates()
-    } catch (error) {
-      console.error('Error saving job template:', error)
-      console.error('Error details:', {
-        message: error?.message,
-        details: error?.details,
-        hint: error?.hint,
-        code: error?.code
-      })
+    } else {
+      console.error('Error saving job template:', response.error)
       toast({
         title: "Error",
-        description: error?.message || "Failed to save job template",
+        description: response.error || "Failed to save job template",
         variant: "destructive"
       })
-    } finally {
-      setIsSubmitting(false)
     }
+    
+    setIsSubmitting(false)
   }
 
   const handleEdit = (template: JobTemplate) => {
@@ -205,24 +144,19 @@ export default function JobTemplateForm() {
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this job template?')) return
 
-    try {
-      const { error } = await supabase
-        .from('job_optimized_patterns')
-        .delete()
-        .eq('pattern_id', id)
-
-      if (error) throw error
-
+    const response = await jobTemplateService.delete(id)
+    
+    if (response.success) {
       toast({
         title: "Success",
         description: "Job template deleted successfully"
       })
       fetchJobTemplates()
-    } catch (error) {
-      console.error('Error deleting job template:', error)
+    } else {
+      console.error('Error deleting job template:', response.error)
       toast({
         title: "Error",
-        description: "Failed to delete job template",
+        description: response.error || "Failed to delete job template",
         variant: "destructive"
       })
     }
@@ -251,10 +185,7 @@ export default function JobTemplateForm() {
                 <Label htmlFor="name">Template Name *</Label>
                 <Input
                   id="name"
-                  {...register('name', { 
-                    required: 'Template name is required',
-                    maxLength: { value: 255, message: 'Name must be 255 characters or less' }
-                  })}
+                  {...register('name')}
                   placeholder="e.g., Standard Manufacturing Template"
                 />
                 {errors.name && <p className="text-sm text-red-600">{errors.name.message}</p>}
@@ -268,11 +199,7 @@ export default function JobTemplateForm() {
                   id="task_count"
                   type="number"
                   min="1"
-                  {...register('task_count', { 
-                    valueAsNumber: true,
-                    required: 'Task count is required',
-                    min: { value: 1, message: 'Must have at least 1 task' }
-                  })}
+                  {...register('task_count', { valueAsNumber: true })}
                   placeholder="1"
                 />
                 <p className="text-xs text-gray-500">Number of tasks in this pattern</p>
@@ -286,10 +213,7 @@ export default function JobTemplateForm() {
                   id="total_min_duration_minutes"
                   type="number"
                   min="0"
-                  {...register('total_min_duration_minutes', { 
-                    valueAsNumber: true,
-                    min: { value: 0, message: 'Duration must be non-negative' }
-                  })}
+                  {...register('total_min_duration_minutes', { valueAsNumber: true })}
                   placeholder="60"
                 />
                 <p className="text-xs text-gray-500">Sum of minimum task durations</p>
@@ -303,10 +227,7 @@ export default function JobTemplateForm() {
                   id="critical_path_length_minutes"
                   type="number"
                   min="0"
-                  {...register('critical_path_length_minutes', { 
-                    valueAsNumber: true,
-                    min: { value: 0, message: 'Length must be non-negative' }
-                  })}
+                  {...register('critical_path_length_minutes', { valueAsNumber: true })}
                   placeholder="60"
                 />
                 <p className="text-xs text-gray-500">Minimum time to complete pattern (longest path)</p>
@@ -331,17 +252,7 @@ export default function JobTemplateForm() {
               <Label htmlFor="solver_parameters">Blessed Solver Parameters (JSON) *</Label>
               <Textarea
                 id="solver_parameters"
-                {...register('solver_parameters', { 
-                  required: 'Solver parameters are required',
-                  validate: (value) => {
-                    try {
-                      JSON.parse(value)
-                      return true
-                    } catch (e) {
-                      return 'Must be valid JSON'
-                    }
-                  }
-                })}
+                {...register('solver_parameters')}
                 rows={8}
                 className="font-mono text-sm"
                 placeholder={JSON.stringify(defaultSolverParameters, null, 2)}

@@ -65,6 +65,11 @@ uv run python scripts/run_production_solver.py         # Production template sol
 /prompts       # Load PROMPTS.md for effective prompt patterns
 /context       # Load CONTEXT.md for domain knowledge and edge cases
 /development   # Load DEVELOPMENT.md for core components and architecture details
+/gui-context   # Load GUI component patterns and form standards
+/solver-context # Load constraint patterns and optimization templates
+/integration   # Load GUI-solver integration patterns
+/testing-patterns # Load testing strategies for both stacks
+/performance   # Load performance optimization guidelines
 /docs-help     # Load documentation and report files on-demand
 ```
 
@@ -76,7 +81,20 @@ uv run python scripts/run_production_solver.py         # Production template sol
 /tc <name>     # Generate tests
 /cc <function> # Check standards
 
-# Optimization
+# Full-Stack Development
+/gui-dev       # Start GUI dev server + watch backend
+/full-test     # Run both backend tests + GUI playwright tests
+/type-check    # Check types: mypy (backend) + tsc (frontend)
+/gui-form <name> # Generate new form component + validation
+/solver-run    # Quick solver test with sample data
+/db-sync       # Sync database schema + regenerate types
+/integration-test # Test GUI->solver data flow
+/deploy-check  # Full production readiness check
+
+# Performance & Monitoring
+/perf-solver <size>  # Measure solver performance
+/perf-gui           # Measure GUI build performance
+/perf-report        # Generate performance report
 /optimized-benchmark <pattern_id>
 /optimized-optimize-params <pattern_id>
 
@@ -84,6 +102,7 @@ uv run python scripts/run_production_solver.py         # Production template sol
 /ti            # Trace infeasible
 /ps            # Profile performance
 /debug-slow    # Performance workflow
+/debug-integration # Debug GUI-solver integration issues
 ```
 
 ## Standards
@@ -112,6 +131,10 @@ For template development sessions:
 "Continue template pattern {pattern_id}.
 Focus: {specific_area}"
 ```
+
+## Database Configuration
+
+**Supabase Project**: `https://hnrysjrydbhrnqqkrqir.supabase.co`
 
 ## Dependencies
 

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useForm } from 'react-hook-form'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/hooks/use-toast'
@@ -68,7 +68,7 @@ export default function BusinessCalendarForm() {
     }
   })
 
-  const fetchBusinessCalendars = async () => {
+  const fetchBusinessCalendars = useCallback(async () => {
     setLoading(true)
     try {
       const { data, error } = await supabase
@@ -88,11 +88,11 @@ export default function BusinessCalendarForm() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [toast])
 
   useEffect(() => {
     fetchBusinessCalendars()
-  }, [])
+  }, [fetchBusinessCalendars])
 
 
   const workingDaysMaskToArray = (mask: number): boolean[] => {

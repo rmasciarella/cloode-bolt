@@ -115,7 +115,7 @@ export default function SequenceResourceForm() {
   useEffect(() => {
     fetchSequenceResources()
     fetchDepartments()
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const onSubmit = async (data: SequenceResourceFormData) => {
     setIsSubmitting(true)

@@ -168,7 +168,7 @@ export default function JobTaskForm() {
     fetchOptimizedTasks()
     fetchTaskModes()
     fetchMachines()
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const onSubmit = async (data: JobTaskFormData) => {
     setIsSubmitting(true)

@@ -94,7 +94,7 @@ export default function MaintenanceTypeForm() {
 
   useEffect(() => {
     fetchMaintenanceTypes()
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const onSubmit = async (data: MaintenanceTypeFormData) => {
     setIsSubmitting(true)
