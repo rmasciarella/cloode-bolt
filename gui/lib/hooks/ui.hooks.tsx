@@ -74,7 +74,7 @@ class UIHookRegistry {
   async execute<K extends keyof UIHooks>(
     hookName: K,
     componentName: string,
-    ...args: Parameters<UIHookHandler<K>> extends [string, ...infer Rest] ? Rest : never
+    ...args: any[]
   ): Promise<any> {
     const handlers = this.hooks.get(hookName) || []
     const applicableHandlers = handlers.filter(({ condition }) => 
@@ -222,20 +222,30 @@ export function withUIHooks<P extends object>(
     }, [props, enhancedProps])
     
     // Get theme variables and inject styles
-    const themeVars = React.useMemo(async () => {
-      return await uiRegistry.execute('getThemeVariables', componentName, enhancedProps.variant)
-    }, [enhancedProps.variant])
+    const [themeVars, setThemeVars] = React.useState<Record<string, any>>({})
+    const [injectedStyles, setInjectedStyles] = React.useState<React.CSSProperties>({})
+    const [transformedClassName, setTransformedClassName] = React.useState<string | undefined>()
     
-    const injectedStyles = React.useMemo(async () => {
-      return await uiRegistry.execute('injectStyles', componentName, enhancedProps)
-    }, [enhancedProps])
-    
-    // Transform class names
-    const transformedClassName = React.useMemo(async () => {
-      if ('className' in enhancedProps) {
-        return await uiRegistry.execute('transformClassNames', componentName, enhancedProps.className as string, enhancedProps)
+    React.useEffect(() => {
+      const loadThemeAndStyles = async () => {
+        const theme = await uiRegistry.execute('getThemeVariables', componentName, (enhancedProps as any).variant)
+        const styles = await uiRegistry.execute('injectStyles', componentName, enhancedProps)
+        setThemeVars(theme || {})
+        setInjectedStyles(styles || {})
       }
-      return undefined
+      loadThemeAndStyles()
+    }, [(enhancedProps as any).variant, enhancedProps])
+    
+    React.useEffect(() => {
+      const loadClassName = async () => {
+        if ('className' in enhancedProps) {
+          const className = await uiRegistry.execute('transformClassNames', componentName, (enhancedProps as any).className as string, enhancedProps)
+          setTransformedClassName(className)
+        } else {
+          setTransformedClassName(undefined)
+        }
+      }
+      loadClassName()
     }, [enhancedProps])
     
     // Create enhanced event handlers
@@ -273,35 +283,55 @@ export function withUIHooks<P extends object>(
       return eventProps
     }, [enhancedProps, createEnhancedHandler])
     
-    // Render component with all enhancements
-    let element = React.createElement(WrappedComponent, {
-      ...enhancedProps,
-      ...enhancedEventProps,
-      ref: mergedRef,
-      className: transformedClassName || (enhancedProps as any).className,
-      style: { ...(enhancedProps as any).style, ...injectedStyles }
-    })
+    // State for async-rendered elements
+    const [finalElement, setFinalElement] = React.useState<React.ReactElement | null>(null)
     
-    // Execute afterRender and wrapComponent hooks
-    element = uiRegistry.execute('afterRender', componentName, element, enhancedProps) as React.ReactElement
-    element = uiRegistry.execute('wrapComponent', componentName, element, enhancedProps) as React.ReactElement
+    React.useEffect(() => {
+      const renderEnhancedElement = async () => {
+        // Render component with all enhancements
+        let element = React.createElement(WrappedComponent, {
+          ...enhancedProps,
+          ...enhancedEventProps,
+          ref: mergedRef,
+          className: transformedClassName || (enhancedProps as any).className,
+          style: { ...(enhancedProps as any).style, ...injectedStyles }
+        })
+        
+        // Execute afterRender and wrapComponent hooks
+        element = await uiRegistry.execute('afterRender', componentName, element, enhancedProps) as React.ReactElement || element
+        element = await uiRegistry.execute('wrapComponent', componentName, element, enhancedProps) as React.ReactElement || element
+        
+        // Render additional content
+        const beforeContent = await uiRegistry.execute('renderAdditionalContent', componentName, 'before', enhancedProps)
+        const afterContent = await uiRegistry.execute('renderAdditionalContent', componentName, 'after', enhancedProps)
+        const replaceContent = await uiRegistry.execute('renderAdditionalContent', componentName, 'replace', enhancedProps)
+        
+        if (replaceContent) {
+          setFinalElement(replaceContent as React.ReactElement)
+          return
+        }
+        
+        setFinalElement(
+          <React.Fragment>
+            {beforeContent}
+            {element}
+            {afterContent}
+          </React.Fragment>
+        )
+      }
+      
+      renderEnhancedElement()
+    }, [enhancedProps, enhancedEventProps, transformedClassName, injectedStyles, mergedRef])
     
-    // Render additional content
-    const beforeContent = uiRegistry.execute('renderAdditionalContent', componentName, 'before', enhancedProps)
-    const afterContent = uiRegistry.execute('renderAdditionalContent', componentName, 'after', enhancedProps)
-    const replaceContent = uiRegistry.execute('renderAdditionalContent', componentName, 'replace', enhancedProps)
-    
-    if (replaceContent) {
-      return replaceContent as React.ReactElement
+    // Return loading state while async operations complete
+    if (!finalElement) {
+      return React.createElement(WrappedComponent, {
+        ...enhancedProps,
+        ref: mergedRef
+      })
     }
     
-    return (
-      <React.Fragment>
-        {beforeContent}
-        {element}
-        {afterContent}
-      </React.Fragment>
-    )
+    return finalElement
   })
 }
 

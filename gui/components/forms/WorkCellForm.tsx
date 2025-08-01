@@ -115,7 +115,7 @@ export default function WorkCellForm() {
     setValue('target_utilization', workCell.target_utilization * 100) // Convert decimal to %
     setValue('flow_priority', workCell.flow_priority)
     setValue('floor_location', workCell.floor_location || '')
-    setValue('cell_type', workCell.cell_type as any)
+    setValue('cell_type', workCell.cell_type as typeof cellTypes[number])
     setValue('is_active', workCell.is_active)
   }
 
@@ -277,7 +277,7 @@ export default function WorkCellForm() {
               <Checkbox
                 id="is_active"
                 checked={watch('is_active')}
-                onCheckedChange={(checked) => setValue('is_active', checked as boolean)}
+                onCheckedChange={(checked) => setValue('is_active', !!checked)}
               />
               <Label htmlFor="is_active">Active</Label>
             </div>

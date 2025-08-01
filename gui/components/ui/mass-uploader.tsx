@@ -71,7 +71,7 @@ export function MassUploader({
   }
 
   const parseCSV = (text: string): Record<string, any>[] => {
-    const result = Papa.parse(text, {
+    const result = Papa.parse<Record<string, any>>(text, {
       header: true,
       skipEmptyLines: true,
       trimHeaders: true,
@@ -92,8 +92,10 @@ export function MassUploader({
       }
     })
 
-    if (result.errors.length > 0) {
-      const errorMessages = result.errors.map(error => `Row ${error.row}: ${error.message}`).join('; ')
+    if (result.errors && result.errors.length > 0) {
+      const errorMessages = result.errors.map(error => 
+        `Row ${error.row || 'unknown'}: ${error.message || 'Unknown error'}`
+      ).join('; ')
       throw new Error(`CSV parsing errors: ${errorMessages}`)
     }
 
@@ -101,7 +103,7 @@ export function MassUploader({
       throw new Error('CSV must have at least one data row')
     }
 
-    return result.data as Record<string, any>[]
+    return result.data
   }
 
   const validateRow = (row: Record<string, any>, rowIndex: number): string[] => {

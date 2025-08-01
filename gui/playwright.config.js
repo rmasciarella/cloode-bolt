@@ -26,5 +26,6 @@ module.exports = defineConfig({
     command: 'npm run dev',
     port: 3002,
     reuseExistingServer: !process.env.CI,
+    timeout: 120 * 1000, // 2 minutes for dev server to start
   },
 });
