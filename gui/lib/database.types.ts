@@ -80,7 +80,7 @@ export interface Database {
           pattern_id?: string
           name: string
           description?: string | null
-          task_count: number
+          task_count?: number
           total_min_duration_minutes?: number
           critical_path_length_minutes?: number
           baseline_performance_seconds?: number | null
@@ -117,6 +117,73 @@ export interface Database {
           is_active?: boolean
           created_at?: string
           updated_at?: string
+        }
+      }
+      optimized_tasks: {
+        Row: {
+          optimized_task_id: string
+          pattern_id: string
+          name: string
+          position: number
+          department_id: string | null
+          is_unattended: boolean
+          is_setup: boolean
+          sequence_id: string | null
+          min_operators: number
+          max_operators: number
+          operator_efficiency_curve: string | null
+          created_at: string
+        }
+        Insert: {
+          optimized_task_id?: string
+          pattern_id: string
+          name: string
+          position?: number
+          department_id?: string | null
+          is_unattended?: boolean
+          is_setup?: boolean
+          sequence_id?: string | null
+          min_operators?: number
+          max_operators?: number
+          operator_efficiency_curve?: string | null
+          created_at?: string
+        }
+        Update: {
+          optimized_task_id?: string
+          pattern_id?: string
+          name?: string
+          position?: number
+          department_id?: string | null
+          is_unattended?: boolean
+          is_setup?: boolean
+          sequence_id?: string | null
+          min_operators?: number
+          max_operators?: number
+          operator_efficiency_curve?: string | null
+          created_at?: string
+        }
+      }
+      optimized_precedences: {
+        Row: {
+          precedence_id: string
+          pattern_id: string
+          predecessor_task_id: string
+          successor_task_id: string
+          created_at: string
+        }
+        Insert: {
+          precedence_id?: string
+          pattern_id: string
+          predecessor_task_id: string
+          successor_task_id: string
+          created_at?: string
+        }
+        Update: {
+          precedence_id?: string
+          pattern_id?: string
+          predecessor_task_id?: string
+          successor_task_id?: string
+          created_at?: string
         }
       }
       machines: {
@@ -194,6 +261,62 @@ export interface Database {
           calendar_id?: string | null
           is_active?: boolean
           created_at?: string
+        }
+      }
+      optimized_task_setup_times: {
+        Row: {
+          setup_time_id: string
+          from_optimized_task_id: string
+          to_optimized_task_id: string
+          machine_resource_id: string
+          setup_time_minutes: number
+          setup_type: string
+          complexity_level: string
+          requires_operator_skill: string | null
+          requires_certification: boolean
+          requires_supervisor_approval: boolean
+          setup_cost: number
+          efficiency_impact_percent: number
+          product_family_from: string | null
+          product_family_to: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          setup_time_id?: string
+          from_optimized_task_id: string
+          to_optimized_task_id: string
+          machine_resource_id: string
+          setup_time_minutes: number
+          setup_type?: string
+          complexity_level?: string
+          requires_operator_skill?: string | null
+          requires_certification?: boolean
+          requires_supervisor_approval?: boolean
+          setup_cost?: number
+          efficiency_impact_percent?: number
+          product_family_from?: string | null
+          product_family_to?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          setup_time_id?: string
+          from_optimized_task_id?: string
+          to_optimized_task_id?: string
+          machine_resource_id?: string
+          setup_time_minutes?: number
+          setup_type?: string
+          complexity_level?: string
+          requires_operator_skill?: string | null
+          requires_certification?: boolean
+          requires_supervisor_approval?: boolean
+          setup_cost?: number
+          efficiency_impact_percent?: number
+          product_family_from?: string | null
+          product_family_to?: string | null
+          created_at?: string
+          updated_at?: string
         }
       }
       template_task_setup_times: {
@@ -664,3 +787,6 @@ export interface Database {
     }
   }
 }
+
+// Type aliases for common use
+export type TemplateTask = Database['public']['Tables']['template_tasks']['Row']

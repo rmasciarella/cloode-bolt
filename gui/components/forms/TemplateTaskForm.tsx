@@ -54,7 +54,6 @@ type OptimizedTaskFormData = {
   min_operators: number
   max_operators: number
   operator_efficiency_curve: string
-  estimated_duration_minutes: number
 }
 
 const efficiencyCurves = [
@@ -85,8 +84,7 @@ export default function OptimizedTaskForm() {
       sequence_id: '',
       min_operators: 1,
       max_operators: 1,
-      operator_efficiency_curve: 'linear',
-      estimated_duration_minutes: 60
+      operator_efficiency_curve: 'linear'
     }
   })
 
@@ -162,7 +160,7 @@ export default function OptimizedTaskForm() {
     fetchJobOptimizedPatterns()
     fetchDepartments()
     fetchSequenceResources()
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const onSubmit = async (data: OptimizedTaskFormData) => {
     setIsSubmitting(true)
@@ -177,8 +175,7 @@ export default function OptimizedTaskForm() {
         sequence_id: data.sequence_id || null,
         min_operators: data.min_operators,
         max_operators: data.max_operators,
-        operator_efficiency_curve: data.operator_efficiency_curve || null,
-        estimated_duration_minutes: data.estimated_duration_minutes
+        operator_efficiency_curve: data.operator_efficiency_curve || null
       }
 
       if (editingId) {
@@ -345,21 +342,6 @@ export default function OptimizedTaskForm() {
                 {!watch('department_id') && <p className="text-sm text-red-600">Department is required</p>}
               </div>
 
-              {/* Estimated Duration */}
-              <div className="space-y-2">
-                <Label htmlFor="estimated_duration_minutes">Estimated Duration (minutes) *</Label>
-                <Input
-                  id="estimated_duration_minutes"
-                  type="number"
-                  min="1"
-                  {...register('estimated_duration_minutes', { 
-                    valueAsNumber: true,
-                    required: 'Duration is required',
-                    min: { value: 1, message: 'Duration must be at least 1 minute' }
-                  })}
-                />
-                {errors.estimated_duration_minutes && <p className="text-sm text-red-600">{errors.estimated_duration_minutes.message}</p>}
-              </div>
 
               {/* Sequence Resource */}
               <div className="space-y-2">
