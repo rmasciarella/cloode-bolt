@@ -1,9 +1,10 @@
 "use client"
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useForm } from 'react-hook-form'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/hooks/use-toast'
+import { useFormPerformanceMonitoring } from '@/lib/hooks/use-form-performance'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -12,7 +13,9 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { TimeInput } from '@/components/ui/time-input'
 import { indexToTime12, getTimeRangeDescription } from '@/lib/timeUtils'
-import { Loader2, Edit, Trash2 } from 'lucide-react'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { MassUploader } from '@/components/ui/mass-uploader'
+import { Loader2, Edit, Trash2, Upload, Activity } from 'lucide-react'
 
 type BusinessCalendar = {
   calendar_id: string
@@ -54,6 +57,28 @@ export default function BusinessCalendarForm() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const { toast } = useToast()
+  
+  // Performance tracking using the correct hook
+  const formPerformanceMetrics = useFormPerformanceMonitoring('BusinessCalendarForm')
+  
+  const formRef = useRef<HTMLFormElement>(null)
+  const [showPerformanceDebug, setShowPerformanceDebug] = useState(false)
+  
+  // Performance debugging in development
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'development') {
+      const handleKeyPress = (e: KeyboardEvent) => {
+        if (e.ctrlKey && e.shiftKey && e.key === 'P') {
+          e.preventDefault()
+          setShowPerformanceDebug(prev => !prev)
+          console.log('[FORM-PERF] Performance summary:', formPerformanceMetrics.getFormSummary())
+        }
+      }
+      
+      window.addEventListener('keydown', handleKeyPress)
+      return () => window.removeEventListener('keydown', handleKeyPress)
+    }
+  }, [formPerformanceMetrics])
 
   const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<BusinessCalendarFormData>({
     defaultValues: {
@@ -67,9 +92,28 @@ export default function BusinessCalendarForm() {
       is_active: true
     }
   })
+  
+  // Track validation errors in real-time
+  useEffect(() => {
+    if (Object.keys(errors).length > 0) {
+      Object.keys(errors).forEach(fieldName => {
+        formPerformanceMetrics.startValidation(fieldName)
+        formPerformanceMetrics.trackValidation(fieldName, true, errors[fieldName]?.message)
+      })
+    }
+  }, [errors, formPerformanceMetrics])
+  
+  // Call finalizeMetrics on unmount to ensure metrics are recorded
+  useEffect(() => {
+    return () => {
+      formPerformanceMetrics.finalizeMetrics()
+    }
+  }, [formPerformanceMetrics])
 
   const fetchBusinessCalendars = useCallback(async () => {
+    const fetchStart = Date.now()
     setLoading(true)
+    
     try {
       const { data, error } = await supabase
         .from('business_calendars')
@@ -78,8 +122,16 @@ export default function BusinessCalendarForm() {
 
       if (error) throw error
       setBusinessCalendars(data || [])
+      
+      // Track data fetch performance
+      const fetchDuration = Date.now() - fetchStart
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[FORM-PERF] BusinessCalendarForm.fetchData: ${fetchDuration}ms`)
+      }
     } catch (error) {
       console.error('Error fetching business calendars:', error)
+      formPerformanceMetrics.startValidation('data_fetch')
+      formPerformanceMetrics.trackValidation('data_fetch', true)
       toast({
         title: "Error",
         description: "Failed to fetch business calendars",
@@ -88,10 +140,12 @@ export default function BusinessCalendarForm() {
     } finally {
       setLoading(false)
     }
-  }, [toast])
+  }, [toast, formPerformanceMetrics])
 
   useEffect(() => {
     fetchBusinessCalendars()
+    
+    // Form load time is automatically tracked by the hook
   }, [fetchBusinessCalendars])
 
 
@@ -106,7 +160,9 @@ export default function BusinessCalendarForm() {
   }
 
   const onSubmit = async (data: BusinessCalendarFormData) => {
+    formPerformanceMetrics.trackSubmissionStart()
     setIsSubmitting(true)
+    
     try {
       const formData = {
         name: data.name,
@@ -147,8 +203,12 @@ export default function BusinessCalendarForm() {
       reset()
       setEditingId(null)
       fetchBusinessCalendars()
+      
+      // Track successful submission
+      formPerformanceMetrics.trackSubmissionEnd(true)
     } catch (error) {
       console.error('Error saving business calendar:', error)
+      formPerformanceMetrics.trackSubmissionEnd(false)
       toast({
         title: "Error",
         description: "Failed to save business calendar",
@@ -212,6 +272,42 @@ export default function BusinessCalendarForm() {
 
   return (
     <div className="space-y-6">
+      {/* Performance Debug Panel - Development Only */}
+      {process.env.NODE_ENV === 'development' && showPerformanceDebug && (
+        <Card className="border-yellow-200 bg-yellow-50">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Activity className="h-4 w-4" />
+              Performance Debug - BusinessCalendarForm
+              <Button 
+                size="sm" 
+                variant="ghost" 
+                onClick={() => setShowPerformanceDebug(false)}
+                className="ml-auto"
+              >
+                ×
+              </Button>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="text-xs space-y-2">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p><strong>Load Time:</strong> {formPerformanceMetrics.loadTime || 'N/A'}ms</p>
+                <p><strong>Submit Time:</strong> {formPerformanceMetrics.submissionTime || 'N/A'}ms</p>
+                <p><strong>Validation Time:</strong> {formPerformanceMetrics.validationTime || 'N/A'}ms</p>
+              </div>
+              <div>
+                <p><strong>Error Count:</strong> {formPerformanceMetrics.errorCount}</p>
+                <p><strong>Interactions:</strong> {formPerformanceMetrics.interactionCount}</p>
+                <p><strong>High Error Rate:</strong> {formPerformanceMetrics.hasHighErrorRate ? 'Yes' : 'No'}</p>
+              </div>
+            </div>
+            <div className="mt-2">
+              <p className="text-xs text-gray-600">Press Ctrl+Shift+P to toggle this panel</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
       {/* Form Card */}
       <Card>
         <CardHeader>
@@ -221,7 +317,17 @@ export default function BusinessCalendarForm() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <form 
+            ref={formRef}
+            onSubmit={handleSubmit(onSubmit)} 
+            className="space-y-4"
+            onClick={(e) => {
+              const target = e.target as HTMLElement
+              if (target.tagName === 'BUTTON' || target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
+                formPerformanceMetrics.trackInteraction('click', target.tagName.toLowerCase() + (target.id ? `#${target.id}` : ''))
+              }
+            }}
+          >
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Name - Required */}
               <div className="space-y-2">
@@ -233,6 +339,18 @@ export default function BusinessCalendarForm() {
                     maxLength: { value: 255, message: 'Name must be 255 characters or less' }
                   })}
                   placeholder="e.g., Standard Business Calendar"
+                  onFocus={() => formPerformanceMetrics.trackInteraction('focus', 'name')}
+                  onBlur={() => {
+                    // Validate field on blur
+                    const value = (document.getElementById('name') as HTMLInputElement)?.value
+                    if (value) {
+                      formPerformanceMetrics.startValidation('name')
+                      formPerformanceMetrics.trackValidation('name', value.length > 255)
+                    }
+                  }}
+                  onChange={(e) => {
+                    formPerformanceMetrics.trackInteraction('change', 'name')
+                  }}
                 />
                 {errors.name && <p className="text-sm text-red-600">{errors.name.message}</p>}
               </div>
@@ -244,6 +362,8 @@ export default function BusinessCalendarForm() {
                   id="timezone"
                   {...register('timezone')}
                   placeholder="e.g., UTC, America/New_York, Europe/London"
+                  onFocus={() => formPerformanceMetrics.trackInteraction('focus', 'timezone')}
+                  onChange={(e) => formPerformanceMetrics.trackInteraction('change', 'timezone')}
                 />
               </div>
 
@@ -251,7 +371,10 @@ export default function BusinessCalendarForm() {
               <TimeInput
                 label="Default Start Time"
                 value={watch('default_start_time') || 32}
-                onChange={(index) => setValue('default_start_time', index)}
+                onChange={(index) => {
+                  setValue('default_start_time', index)
+                  formPerformanceMetrics.trackInteraction('click', 'time-input#default_start_time')
+                }}
                 id="default_start_time"
                 placeholder="Select start time"
                 helperText="Default working hours start time for this calendar"
@@ -262,7 +385,10 @@ export default function BusinessCalendarForm() {
               <TimeInput
                 label="Default End Time"
                 value={watch('default_end_time') || 64}
-                onChange={(index) => setValue('default_end_time', index)}
+                onChange={(index) => {
+                  setValue('default_end_time', index)
+                  formPerformanceMetrics.trackInteraction('click', 'time-input#default_end_time')
+                }}
                 id="default_end_time"
                 placeholder="Select end time"
                 helperText="Default working hours end time for this calendar"
@@ -278,6 +404,8 @@ export default function BusinessCalendarForm() {
                 {...register('description')}
                 placeholder="Calendar description and usage notes"
                 rows={3}
+                onFocus={() => formPerformanceMetrics.trackInteraction('focus', 'description')}
+                onChange={(e) => formPerformanceMetrics.trackInteraction('change', 'description')}
               />
             </div>
 
@@ -295,6 +423,7 @@ export default function BusinessCalendarForm() {
                         const newDays = [...currentDays]
                         newDays[index] = checked as boolean
                         setValue('working_days', newDays)
+                        formPerformanceMetrics.trackInteraction('click', `checkbox#working_day_${index}`)
                       }}
                     />
                     <Label htmlFor={`working_day_${index}`} className="text-sm">
@@ -311,7 +440,10 @@ export default function BusinessCalendarForm() {
                 <Checkbox
                   id="is_default"
                   checked={watch('is_default')}
-                  onCheckedChange={(checked) => setValue('is_default', checked as boolean)}
+                  onCheckedChange={(checked) => {
+                    setValue('is_default', checked as boolean)
+                    formPerformanceMetrics.trackInteraction('click', 'checkbox#is_default')
+                  }}
                 />
                 <Label htmlFor="is_default">Default Calendar</Label>
                 <p className="text-xs text-gray-500 ml-2">Use as default for new departments and resources</p>
@@ -321,7 +453,10 @@ export default function BusinessCalendarForm() {
                 <Checkbox
                   id="is_active"
                   checked={watch('is_active')}
-                  onCheckedChange={(checked) => setValue('is_active', checked as boolean)}
+                  onCheckedChange={(checked) => {
+                    setValue('is_active', checked as boolean)
+                    formPerformanceMetrics.trackInteraction('click', 'checkbox#is_active')
+                  }}
                 />
                 <Label htmlFor="is_active">Active</Label>
               </div>
@@ -330,11 +465,22 @@ export default function BusinessCalendarForm() {
             {/* Action Buttons */}
             <div className="flex justify-end space-x-2 pt-4">
               {editingId && (
-                <Button type="button" variant="outline" onClick={handleCancel}>
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={() => {
+                    handleCancel()
+                    formPerformanceMetrics.trackInteraction('click', 'button#cancel')
+                  }}
+                >
                   Cancel
                 </Button>
               )}
-              <Button type="submit" disabled={isSubmitting}>
+              <Button 
+                type="submit" 
+                disabled={isSubmitting}
+                onClick={() => formPerformanceMetrics.trackInteraction('click', 'button#submit')}
+              >
                 {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 {editingId ? 'Update' : 'Create'} Calendar
               </Button>
@@ -399,14 +545,20 @@ export default function BusinessCalendarForm() {
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => handleEdit(calendar)}
+                            onClick={() => {
+                              handleEdit(calendar)
+                              formPerformanceMetrics.trackInteraction('click', `button#edit-${calendar.calendar_id}`)
+                            }}
                           >
                             <Edit className="h-4 w-4" />
                           </Button>
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => handleDelete(calendar.calendar_id)}
+                            onClick={() => {
+                              handleDelete(calendar.calendar_id)
+                              formPerformanceMetrics.trackInteraction('click', `button#delete-${calendar.calendar_id}`)
+                            }}
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>

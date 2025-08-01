@@ -260,7 +260,7 @@ export function useEntity<T>(entityName: string) {
   
   return {
     useList: (options?: UseDataListOptions) => 
-      useDataList<T>(keys.all, () => ({ success: true, data: [], error: null }), options),
+      useDataList<T>(keys.all, async () => ({ success: true, data: [], error: null }), options),
     
     useDetail: (id: string, queryFn: (id: string) => Promise<any>, options?: UseDataListOptions) => {
       const { toast } = useToast()

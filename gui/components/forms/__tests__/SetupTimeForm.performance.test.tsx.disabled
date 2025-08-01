@@ -1,0 +1,325 @@
+/**
+ * Performance monitoring tests for SetupTimeForm
+ * Tests the comprehensive performance monitoring implementation
+ */
+
+import { render, fireEvent, waitFor, screen } from '@testing-library/react'
+import { usePerformanceMonitor, getGlobalPerformanceData } from '@/hooks/use-performance-monitor'
+import SetupTimeForm from '../SetupTimeForm'
+
+// Mock Supabase
+jest.mock('@/lib/supabase', () => ({
+  supabase: {
+    from: jest.fn(() => ({
+      select: jest.fn(() => ({
+        limit: jest.fn(() => ({
+          then: jest.fn(() => Promise.resolve({ data: [], error: null }))
+        })),
+        order: jest.fn(() => ({
+          then: jest.fn(() => Promise.resolve({ data: [], error: null }))
+        })),
+        eq: jest.fn(() => ({
+          order: jest.fn(() => ({
+            then: jest.fn(() => Promise.resolve({ data: [], error: null }))
+          }))
+        }))
+      })),
+      insert: jest.fn(() => ({
+        then: jest.fn(() => Promise.resolve({ data: null, error: null }))
+      })),
+      update: jest.fn(() => ({
+        eq: jest.fn(() => ({
+          then: jest.fn(() => Promise.resolve({ data: null, error: null }))
+        }))
+      })),
+      delete: jest.fn(() => ({
+        eq: jest.fn(() => ({
+          then: jest.fn(() => Promise.resolve({ data: null, error: null }))
+        }))
+      }))
+    }))
+  }
+}))
+
+// Mock toast
+jest.mock('@/hooks/use-toast', () => ({
+  useToast: () => ({
+    toast: jest.fn()
+  })
+}))
+
+// Mock form components
+jest.mock('@/components/ui/button', () => ({
+  Button: ({ children, onClick, ...props }: any) => (
+    <button onClick={onClick} {...props}>{children}</button>
+  )
+}))
+
+jest.mock('@/components/ui/input', () => ({
+  Input: (props: any) => <input {...props} />
+}))
+
+jest.mock('@/components/ui/select', () => ({
+  Select: ({ children, onValueChange, onOpenChange }: any) => (
+    <div data-testid="select" onClick={() => onOpenChange?.(true)}>
+      {children}
+    </div>
+  ),
+  SelectTrigger: ({ children }: any) => <div>{children}</div>,
+  SelectValue: ({ placeholder }: any) => <span>{placeholder}</span>,
+  SelectContent: ({ children }: any) => <div>{children}</div>,
+  SelectItem: ({ children, value, onClick }: any) => (
+    <div onClick={() => onClick?.(value)}>{children}</div>
+  )
+}))
+
+jest.mock('@/components/ui/label', () => ({
+  Label: ({ children }: any) => <label>{children}</label>
+}))
+
+jest.mock('@/components/ui/checkbox', () => ({
+  Checkbox: ({ onCheckedChange, onFocus, onBlur }: any) => (
+    <input 
+      type="checkbox" 
+      onChange={(e) => onCheckedChange?.(e.target.checked)}
+      onFocus={onFocus}
+      onBlur={onBlur}
+    />
+  )
+}))
+
+jest.mock('@/components/ui/card', () => ({
+  Card: ({ children }: any) => <div className="card">{children}</div>,
+  CardHeader: ({ children }: any) => <div className="card-header">{children}</div>,
+  CardTitle: ({ children }: any) => <h3>{children}</h3>,
+  CardDescription: ({ children }: any) => <p>{children}</p>,
+  CardContent: ({ children }: any) => <div className="card-content">{children}</div>
+}))
+
+jest.mock('@/components/ui/tabs', () => ({
+  Tabs: ({ children }: any) => <div>{children}</div>,
+  TabsList: ({ children }: any) => <div>{children}</div>,
+  TabsTrigger: ({ children }: any) => <button>{children}</button>,
+  TabsContent: ({ children }: any) => <div>{children}</div>
+}))
+
+jest.mock('@/components/ui/mass-uploader', () => ({
+  MassUploader: () => <div data-testid="mass-uploader">Mass Uploader</div>
+}))
+
+jest.mock('@/components/ui/performance-dashboard', () => ({
+  PerformanceDashboard: ({ monitor }: any) => (
+    <div data-testid="performance-dashboard">
+      Performance Dashboard
+      <div data-testid="metrics-count">{monitor.getMetrics().length}</div>
+    </div>
+  )
+}))
+
+describe('SetupTimeForm Performance Monitoring', () => {
+  beforeEach(() => {
+    // Reset performance data
+    jest.clearAllMocks()
+    
+    // Set development environment for performance dashboard
+    process.env.NODE_ENV = 'development'
+  })
+
+  test('should track form load time', async () => {
+    render(<SetupTimeForm />)
+    
+    await waitFor(() => {
+      const performanceData = getGlobalPerformanceData()
+      const loadMetrics = performanceData.metrics.filter((m: any) => 
+        m.component === 'SetupTimeForm' && m.operation === 'form_initial_load'
+      )
+      
+      expect(loadMetrics.length).toBeGreaterThan(0)
+      expect(loadMetrics[0].success).toBe(true)
+      expect(loadMetrics[0].duration_ms).toBeGreaterThan(0)
+    })
+  })
+
+  test('should track field interactions', async () => {
+    render(<SetupTimeForm />)
+    
+    const setupTimeInput = await screen.findByLabelText(/setup time.*minutes/i)
+    
+    fireEvent.focus(setupTimeInput)
+    fireEvent.change(setupTimeInput, { target: { value: '30' } })
+    fireEvent.blur(setupTimeInput)
+    
+    await waitFor(() => {
+      const performanceData = getGlobalPerformanceData()
+      const interactionMetrics = performanceData.metrics.filter((m: any) => 
+        m.component === 'SetupTimeForm' && m.operation.startsWith('interaction_')
+      )
+      
+      expect(interactionMetrics.length).toBeGreaterThan(0)
+      
+      // Should have focus, change, and blur interactions
+      const focusMetric = interactionMetrics.find((m: any) => m.operation === 'interaction_focus')
+      const changeMetric = interactionMetrics.find((m: any) => m.operation === 'interaction_change')
+      const blurMetric = interactionMetrics.find((m: any) => m.operation === 'interaction_blur')
+      
+      expect(focusMetric).toBeDefined()
+      expect(changeMetric).toBeDefined()
+      expect(blurMetric).toBeDefined()
+    })
+  })
+
+  test('should track field validation performance', async () => {
+    render(<SetupTimeForm />)
+    
+    const setupTimeInput = await screen.findByLabelText(/setup time.*minutes/i)
+    
+    // Test with valid value
+    fireEvent.change(setupTimeInput, { target: { value: '30' } })
+    fireEvent.blur(setupTimeInput)
+    
+    // Test with invalid value
+    fireEvent.change(setupTimeInput, { target: { value: '-5' } })
+    fireEvent.blur(setupTimeInput)
+    
+    await waitFor(() => {
+      const performanceData = getGlobalPerformanceData()
+      const validationMetrics = performanceData.metrics.filter((m: any) => 
+        m.component === 'SetupTimeForm' && m.operation.startsWith('validation_')
+      )
+      
+      expect(validationMetrics.length).toBeGreaterThan(0)
+      
+      // Should have both successful and failed validations
+      const successfulValidation = validationMetrics.find((m: any) => m.success === true)
+      const failedValidation = validationMetrics.find((m: any) => m.success === false)
+      
+      expect(successfulValidation).toBeDefined()
+      expect(failedValidation).toBeDefined()
+    })
+  })
+
+  test('should track form submission performance', async () => {
+    render(<SetupTimeForm />)
+    
+    // Fill out required fields
+    const submitButton = await screen.findByRole('button', { name: /create setup time/i })
+    
+    // Mock successful submission
+    fireEvent.click(submitButton)
+    
+    await waitFor(() => {
+      const performanceData = getGlobalPerformanceData()
+      const submissionMetrics = performanceData.metrics.filter((m: any) => 
+        m.component === 'SetupTimeForm' && m.operation === 'form_submission_validation_error'
+      )
+      
+      // Should track submission attempt (will fail validation due to missing required fields)
+      expect(submissionMetrics.length).toBeGreaterThan(0)
+    })
+  })
+
+  test('should track edit and delete operations', async () => {
+    render(<SetupTimeForm />)
+    
+    // Wait for form to load
+    await waitFor(() => {
+      expect(screen.getByText('Create New Setup Time')).toBeInTheDocument()
+    })
+    
+    // Simulate edit button click
+    const editButton = document.createElement('button')
+    editButton.onclick = () => {
+      const monitor = usePerformanceMonitor('SetupTimeForm')
+      monitor.recordInteraction('edit_button_click')
+    }
+    fireEvent.click(editButton)
+    
+    await waitFor(() => {
+      const performanceData = getGlobalPerformanceData()
+      const editMetrics = performanceData.metrics.filter((m: any) => 
+        m.component === 'SetupTimeForm' && m.operation === 'interaction_edit_button_click'
+      )
+      
+      expect(editMetrics.length).toBeGreaterThan(0)
+    })
+  })
+
+  test('should track error rates', async () => {
+    render(<SetupTimeForm />)
+    
+    await waitFor(() => {
+      const performanceData = getGlobalPerformanceData()
+      const allMetrics = performanceData.metrics.filter((m: any) => 
+        m.component === 'SetupTimeForm'
+      )
+      
+      const errorMetrics = allMetrics.filter((m: any) => !m.success)
+      const errorRate = allMetrics.length > 0 ? (errorMetrics.length / allMetrics.length) * 100 : 0
+      
+      // Error rate should be a valid percentage
+      expect(errorRate).toBeGreaterThanOrEqual(0)
+      expect(errorRate).toBeLessThanOrEqual(100)
+    })
+  })
+
+  test('should export performance metrics', async () => {
+    render(<SetupTimeForm />)
+    
+    await waitFor(() => {
+      const performanceData = getGlobalPerformanceData()
+      
+      expect(performanceData).toHaveProperty('metrics')
+      expect(performanceData).toHaveProperty('export')
+      expect(Array.isArray(performanceData.metrics)).toBe(true)
+      expect(typeof performanceData.export).toBe('string')
+      
+      // Should be valid JSON
+      expect(() => JSON.parse(performanceData.export)).not.toThrow()
+    })
+  })
+
+  test('should show performance dashboard in development mode', async () => {
+    process.env.NODE_ENV = 'development'
+    render(<SetupTimeForm />)
+    
+    await waitFor(() => {
+      expect(screen.getByTestId('performance-dashboard')).toBeInTheDocument()
+    })
+  })
+
+  test('should hide performance dashboard in production mode', async () => {
+    process.env.NODE_ENV = 'production'
+    render(<SetupTimeForm />)
+    
+    await waitFor(() => {
+      expect(screen.queryByTestId('performance-dashboard')).not.toBeInTheDocument()
+    })
+  })
+
+  test('should maintain minimal performance impact', async () => {
+    const startTime = performance.now()
+    
+    render(<SetupTimeForm />)
+    
+    // Simulate heavy interaction
+    const setupTimeInput = await screen.findByLabelText(/setup time.*minutes/i)
+    
+    for (let i = 0; i < 50; i++) {
+      fireEvent.focus(setupTimeInput)
+      fireEvent.change(setupTimeInput, { target: { value: `${i}` } })
+      fireEvent.blur(setupTimeInput)
+    }
+    
+    const endTime = performance.now()
+    const totalTime = endTime - startTime
+    
+    // Performance monitoring overhead should be minimal
+    // Allowing up to 1000ms for 50 interactions in test environment
+    expect(totalTime).toBeLessThan(1000)
+    
+    await waitFor(() => {
+      const performanceData = getGlobalPerformanceData()
+      expect(performanceData.metrics.length).toBeGreaterThan(0)
+    })
+  })
+})

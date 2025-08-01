@@ -2,76 +2,26 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useForm } from 'react-hook-form'
-import { supabase } from '@/lib/supabase'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { machineService, departmentService, workCellService } from '@/lib/services'
+import { machineFormSchema, type MachineFormData } from '@/lib/schemas'
+import { Database } from '@/lib/database.types'
 import { useToast } from '@/hooks/use-toast'
+import { useFormPerformance } from '@/lib/hooks/use-form-performance'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Loader2, Edit, Trash2 } from 'lucide-react'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { MassUploader } from '@/components/ui/mass-uploader'
+import { Loader2, Edit, Trash2, Upload, Search, Filter } from 'lucide-react'
+import { AdvancedFilter, BulkOperations, useAdvancedTable } from '@/components/ui/advanced-patterns'
 
-type Machine = {
-  machine_resource_id: string
-  name: string
-  capacity: number
-  cost_per_hour: number
-  department_id: string | null
-  cell_id: string
-  setup_time_minutes: number
-  teardown_time_minutes: number
-  maintenance_window_start: number | null
-  maintenance_window_end: number | null
-  last_maintenance_date: string | null
-  next_maintenance_due: string | null
-  maintenance_interval_hours: number
-  machine_type: string | null
-  manufacturer: string | null
-  model: string | null
-  year_installed: number | null
-  efficiency_rating: number
-  average_utilization_percent: number | null
-  uptime_target_percent: number
-  calendar_id: string | null
-  is_active: boolean
-}
-
-type Department = {
-  department_id: string
-  name: string
-  code: string
-}
-
-type WorkCell = {
-  cell_id: string
-  name: string
-  department_id: string | null
-}
-
-type MachineFormData = {
-  name: string
-  capacity: number
-  cost_per_hour: number
-  department_id: string
-  cell_id: string
-  setup_time_minutes: number
-  teardown_time_minutes: number
-  maintenance_window_start: number
-  maintenance_window_end: number
-  last_maintenance_date: string
-  next_maintenance_due: string
-  maintenance_interval_hours: number
-  machine_type: string
-  manufacturer: string
-  model: string
-  year_installed: number
-  efficiency_rating: number
-  average_utilization_percent: number
-  uptime_target_percent: number
-  calendar_id: string
-  is_active: boolean
-}
+type Machine = Database['public']['Tables']['machines']['Row']
+type Department = Database['public']['Tables']['departments']['Row']  
+type WorkCell = Database['public']['Tables']['work_cells']['Row']
 
 export default function MachineForm() {
   const [machines, setMachines] = useState<Machine[]>([])
@@ -83,7 +33,73 @@ export default function MachineForm() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const { toast } = useToast()
 
+  // Initialize performance monitoring
+  const performanceTracker = useFormPerformance('machine-form')
+
+  // Advanced table functionality
+  const advancedTable = useAdvancedTable(
+    machines,
+    (machine) => machine.machine_resource_id,
+    {
+      enableFiltering: true,
+      enableBulkOperations: true,
+      enableSorting: true
+    }
+  )
+
+  const filterOptions = [
+    { key: 'name', label: 'Name', type: 'text' as const },
+    { key: 'machine_type', label: 'Type', type: 'text' as const },
+    { key: 'manufacturer', label: 'Manufacturer', type: 'text' as const },
+    { key: 'is_active', label: 'Active', type: 'boolean' as const }
+  ]
+
+  // Bulk operations handlers
+  const handleBulkDelete = async (ids: string[]) => {
+    for (const id of ids) {
+      const response = await machineService.delete(id)
+      if (!response.success) {
+        toast({
+          title: "Error",
+          description: `Failed to delete machine: ${response.error}`,
+          variant: "destructive"
+        })
+        return
+      }
+    }
+    toast({
+      title: "Success", 
+      description: `Successfully deleted ${ids.length} machines`
+    })
+    fetchMachines()
+    advancedTable.clearSelection()
+  }
+
+  const handleBulkToggleActive = async (ids: string[]) => {
+    for (const id of ids) {
+      const machine = machines.find(m => m.machine_resource_id === id)
+      if (machine) {
+        const response = await machineService.update(id, { is_active: !machine.is_active })
+        if (!response.success) {
+          toast({
+            title: "Error",
+            description: `Failed to update machine: ${response.error}`,
+            variant: "destructive"
+          })
+          return
+        }
+      }
+    }
+    toast({
+      title: "Success",
+      description: `Successfully updated ${ids.length} machines`
+    })
+    fetchMachines()
+    advancedTable.clearSelection()
+  }
+
   const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<MachineFormData>({
+    resolver: zodResolver(machineFormSchema),
     defaultValues: {
       name: '',
       capacity: 1,
@@ -109,56 +125,68 @@ export default function MachineForm() {
     }
   })
 
+  // Enhanced register function with performance tracking
+  const registerWithPerformance = useCallback((name: keyof MachineFormData, validation?: any) => {
+    return {
+      ...register(name, validation),
+      onFocus: (e: any) => {
+        performanceTracker.trackInteraction('focus', name)
+        // React Hook Form doesn't provide onFocus, handle manually
+      },
+      onBlur: (e: any) => {
+        // Track field validation
+        performanceTracker.startValidation(name)
+        
+        // Let react-hook-form handle validation
+        const hasError = !!errors[name]
+        performanceTracker.trackValidation(name, hasError)
+        
+        // Call original onBlur if it exists
+        register(name, validation).onBlur?.(e)
+      },
+      onChange: (e: any) => {
+        performanceTracker.trackInteraction('change', name)
+        register(name, validation).onChange?.(e)
+      }
+    }
+  }, [register, performanceTracker, errors])
+
   const selectedDepartmentId = watch('department_id')
 
   const fetchMachines = useCallback(async () => {
     setLoading(true)
-    try {
-      const { data, error } = await supabase
-        .from('machines')
-        .select('*')
-        .order('name', { ascending: true })
-
-      if (error) throw error
-      setMachines(data || [])
-    } catch (error) {
-      console.error('Error fetching machines:', error)
+    const response = await machineService.getAll()
+    
+    if (response.success && response.data) {
+      setMachines(response.data)
+    } else {
+      console.error('Error fetching machines:', response.error)
       toast({
         title: "Error",
-        description: "Failed to fetch machines",
+        description: response.error || "Failed to fetch machines",
         variant: "destructive"
       })
-    } finally {
-      setLoading(false)
     }
+    setLoading(false)
   }, [toast])
 
   const fetchDepartments = useCallback(async () => {
-    try {
-      const { data, error } = await supabase
-        .from('departments')
-        .select('department_id, name, code')
-        .eq('is_active', true)
-        .order('name', { ascending: true })
-
-      if (error) throw error
-      setDepartments(data || [])
-    } catch (error) {
-      console.error('Error fetching departments:', error)
+    const response = await departmentService.getAll(true) // activeOnly = true
+    
+    if (response.success && response.data) {
+      setDepartments(response.data)
+    } else {
+      console.error('Error fetching departments:', response.error)
     }
   }, [])
 
   const fetchWorkCells = useCallback(async () => {
-    try {
-      const { data, error } = await supabase
-        .from('work_cells')
-        .select('*')
-        .order('name', { ascending: true })
-
-      if (error) throw error
-      setWorkCells(data || [])
-    } catch (error) {
-      console.error('Error fetching work cells:', error)
+    const response = await workCellService.getAll(true) // activeOnly = true
+    
+    if (response.success && response.data) {
+      setWorkCells(response.data)
+    } else {
+      console.error('Error fetching work cells:', response.error)
     }
   }, [])
 
@@ -181,64 +209,52 @@ export default function MachineForm() {
 
   const onSubmit = async (data: MachineFormData) => {
     setIsSubmitting(true)
+    performanceTracker.trackSubmissionStart()
+    
     try {
-      const formData = {
-        name: data.name,
-        capacity: data.capacity,
-        cost_per_hour: data.cost_per_hour,
-        department_id: data.department_id || null,
-        cell_id: data.cell_id,
-        setup_time_minutes: data.setup_time_minutes,
-        teardown_time_minutes: data.teardown_time_minutes,
-        maintenance_window_start: data.maintenance_window_start || null,
-        maintenance_window_end: data.maintenance_window_end || null,
-        last_maintenance_date: data.last_maintenance_date || null,
-        next_maintenance_due: data.next_maintenance_due || null,
-        maintenance_interval_hours: data.maintenance_interval_hours,
-        machine_type: data.machine_type || null,
-        manufacturer: data.manufacturer || null,
-        model: data.model || null,
-        year_installed: data.year_installed || null,
-        efficiency_rating: data.efficiency_rating,
-        average_utilization_percent: data.average_utilization_percent || null,
-        uptime_target_percent: data.uptime_target_percent,
-        calendar_id: data.calendar_id || null,
-        is_active: data.is_active
+      // Track validation start
+      performanceTracker.startValidation('form')
+      
+      // Ensure required fields are present and transform data
+      const submitData: any = {
+        ...data,
+        department_id: data.department_id === 'none' ? null : data.department_id
       }
-
+      
+      // Track validation end
+      performanceTracker.trackValidation('form', false)
+      
+      let response
       if (editingId) {
-        const { error } = await supabase
-          .from('machines')
-          .update(formData)
-          .eq('machine_resource_id', editingId)
-
-        if (error) throw error
-
-        toast({
-          title: "Success",
-          description: "Machine updated successfully"
-        })
+        response = await machineService.update(editingId, submitData)
       } else {
-        const { error } = await supabase
-          .from('machines')
-          .insert([formData])
-
-        if (error) throw error
-
-        toast({
-          title: "Success",
-          description: "Machine created successfully"
-        })
+        response = await machineService.create(submitData)
       }
 
-      reset()
-      setEditingId(null)
-      fetchMachines()
+      if (response.success) {
+        performanceTracker.trackSubmissionEnd(true)
+        toast({
+          title: "Success",
+          description: `Machine ${editingId ? 'updated' : 'created'} successfully`
+        })
+        reset()
+        setEditingId(null)
+        fetchMachines()
+      } else {
+        performanceTracker.trackSubmissionEnd(false)
+        console.error('Error saving machine:', response.error)
+        toast({
+          title: "Error",
+          description: response.error || "Failed to save machine",
+          variant: "destructive"
+        })
+      }
     } catch (error) {
-      console.error('Error saving machine:', error)
+      performanceTracker.trackSubmissionEnd(false)
+      console.error('Unexpected error saving machine:', error)
       toast({
         title: "Error",
-        description: "Failed to save machine",
+        description: "An unexpected error occurred while saving the machine",
         variant: "destructive"
       })
     } finally {
@@ -272,26 +288,38 @@ export default function MachineForm() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this machine?')) return
+    const machine = machines.find(m => m.machine_resource_id === id)
+    if (!machine) return
 
-    try {
-      const { error } = await supabase
-        .from('machines')
-        .delete()
-        .eq('machine_resource_id', id)
+    if (!confirm(`Are you sure you want to delete "${machine.name}"?\n\nThis action cannot be undone.`)) return
 
-      if (error) throw error
-
+    const response = await machineService.delete(id)
+    
+    if (response.success) {
       toast({
         title: "Success",
-        description: "Machine deleted successfully"
+        description: `Machine "${machine.name}" deleted successfully`
       })
       fetchMachines()
-    } catch (error) {
-      console.error('Error deleting machine:', error)
+    } else {
+      console.error('Error deleting machine:', response.error)
+      
+      let errorMessage = response.error || "Failed to delete machine"
+      let errorDetails = ""
+      
+      // Check for common constraint violation errors
+      if (response.error?.includes('foreign key constraint') || 
+          response.error?.includes('violates foreign key')) {
+        errorMessage = "Cannot delete machine - it's still in use"
+        errorDetails = "This machine has related records (job instances, assignments, etc.). Either delete those first or deactivate this machine instead."
+      } else if (response.error?.includes('dependent')) {
+        errorMessage = "Cannot delete machine - has dependencies"
+        errorDetails = "Other records depend on this machine. Consider deactivating instead."
+      }
+
       toast({
         title: "Error",
-        description: "Failed to delete machine",
+        description: errorDetails || errorMessage,
         variant: "destructive"
       })
     }
@@ -302,10 +330,84 @@ export default function MachineForm() {
     setEditingId(null)
   }
 
+  const sampleMachineData = {
+    name: 'CNC Machine 01',
+    capacity: 1,
+    cost_per_hour: 45.50,
+    department_id: null,
+    cell_id: '',
+    setup_time_minutes: 15,
+    teardown_time_minutes: 10,
+    maintenance_window_start: null,
+    maintenance_window_end: null,
+    last_maintenance_date: null,
+    next_maintenance_due: null,
+    maintenance_interval_hours: 168,
+    machine_type: 'CNC',
+    manufacturer: 'Haas',
+    model: 'VF-2',
+    year_installed: 2020,
+    efficiency_rating: 0.95,
+    average_utilization_percent: null,
+    uptime_target_percent: 0.90,
+    calendar_id: null,
+    is_active: true
+  }
+
   return (
     <div className="space-y-6">
-      {/* Form Card */}
-      <Card>
+      {/* Performance Debug Panel - Development Only */}
+      {process.env.NODE_ENV === 'development' && (
+        <Card className="border-yellow-200 bg-yellow-50">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-yellow-800 flex items-center gap-2">
+              🚀 Performance Monitor - MachineForm
+              <span className="text-xs px-2 py-1 bg-yellow-200 rounded">
+                {performanceTracker.isSlowLoading ? '⚠️ Slow' : '✅ Fast'} Load: {performanceTracker.loadTime || 'N/A'}ms
+              </span>
+              {performanceTracker.submissionTime && (
+                <span className="text-xs px-2 py-1 bg-yellow-200 rounded">
+                  {performanceTracker.isSlowSubmission ? '⚠️ Slow' : '✅ Fast'} Submit: {performanceTracker.submissionTime}ms
+                </span>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="grid grid-cols-4 gap-4 text-xs">
+              <div>
+                <strong>User Interactions:</strong>
+                <div>Total: {performanceTracker.interactionCount}</div>
+                <div>First: {performanceTracker.firstInteraction || 'N/A'}ms</div>
+              </div>
+              <div>
+                <strong>Validation:</strong>
+                <div>Errors: {performanceTracker.errorCount}</div>
+                <div>Form Errors: {Object.keys(errors).length}</div>
+              </div>
+              <div>
+                <strong>Performance:</strong>
+                <div>High Error Rate: {performanceTracker.hasHighErrorRate ? 'Yes' : 'No'}</div>
+              </div>
+              <div>
+                <strong>Status:</strong>
+                <div>Loading: {loading ? 'Yes' : 'No'}</div>
+                <div>Submitting: {isSubmitting ? 'Yes' : 'No'}</div>
+                <div>Editing: {editingId ? 'Yes' : 'No'}</div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <Tabs defaultValue="form" className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="form">Single Entry</TabsTrigger>
+          <TabsTrigger value="bulk">Mass Upload</TabsTrigger>
+        </TabsList>
+        
+        <TabsContent value="form" className="space-y-6">
+          {/* Form Card */}
+          <Card>
         <CardHeader>
           <CardTitle>{editingId ? 'Edit Machine' : 'Create New Machine'}</CardTitle>
           <CardDescription>
@@ -320,7 +422,7 @@ export default function MachineForm() {
                 <Label htmlFor="name">Machine Name *</Label>
                 <Input
                   id="name"
-                  {...register('name', { 
+                  {...registerWithPerformance('name', { 
                     required: 'Machine name is required',
                     maxLength: { value: 255, message: 'Name must be 255 characters or less' }
                   })}
@@ -334,7 +436,7 @@ export default function MachineForm() {
                 <Label htmlFor="machine_type">Machine Type</Label>
                 <Input
                   id="machine_type"
-                  {...register('machine_type')}
+                  {...registerWithPerformance('machine_type')}
                   placeholder="e.g., CNC, Assembly, Testing"
                 />
               </div>
@@ -342,7 +444,10 @@ export default function MachineForm() {
               {/* Department - Foreign Key Dropdown */}
               <div className="space-y-2">
                 <Label htmlFor="department_id">Department</Label>
-                <Select onValueChange={(value) => setValue('department_id', value)}>
+                <Select onValueChange={(value) => {
+                  performanceTracker.trackInteraction('click', 'department_id')
+                  setValue('department_id', value)
+                }}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select department" />
                   </SelectTrigger>
@@ -360,7 +465,10 @@ export default function MachineForm() {
               {/* Work Cell - Required, Filtered by Department */}
               <div className="space-y-2">
                 <Label htmlFor="cell_id">Work Cell *</Label>
-                <Select onValueChange={(value) => setValue('cell_id', value)}>
+                <Select onValueChange={(value) => {
+                  performanceTracker.trackInteraction('click', 'cell_id')
+                  setValue('cell_id', value)
+                }}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select work cell" />
                   </SelectTrigger>
@@ -382,7 +490,7 @@ export default function MachineForm() {
                   id="capacity"
                   type="number"
                   min="1"
-                  {...register('capacity', { 
+                  {...registerWithPerformance('capacity', { 
                     valueAsNumber: true,
                     min: { value: 1, message: 'Capacity must be at least 1' }
                   })}
@@ -398,7 +506,7 @@ export default function MachineForm() {
                   type="number"
                   min="0"
                   step="0.01"
-                  {...register('cost_per_hour', { 
+                  {...registerWithPerformance('cost_per_hour', { 
                     valueAsNumber: true,
                     min: { value: 0, message: 'Cost must be non-negative' }
                   })}
@@ -551,7 +659,7 @@ export default function MachineForm() {
                   min="0.1"
                   max="2.0"
                   step="0.1"
-                  {...register('efficiency_rating', { 
+                  {...registerWithPerformance('efficiency_rating', { 
                     valueAsNumber: true,
                     min: { value: 0.1, message: 'Efficiency must be at least 0.1' },
                     max: { value: 2.0, message: 'Efficiency cannot exceed 2.0' }
@@ -610,7 +718,10 @@ export default function MachineForm() {
               <Checkbox
                 id="is_active"
                 checked={watch('is_active')}
-                onCheckedChange={(checked) => setValue('is_active', checked as boolean)}
+                onCheckedChange={(checked) => {
+                  performanceTracker.trackInteraction('click', 'is_active')
+                  setValue('is_active', checked as boolean)
+                }}
               />
               <Label htmlFor="is_active">Active</Label>
             </div>
@@ -618,11 +729,22 @@ export default function MachineForm() {
             {/* Action Buttons */}
             <div className="flex justify-end space-x-2 pt-4">
               {editingId && (
-                <Button type="button" variant="outline" onClick={handleCancel}>
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={() => {
+                    performanceTracker.trackInteraction('click', 'cancel-button')
+                    handleCancel()
+                  }}
+                >
                   Cancel
                 </Button>
               )}
-              <Button type="submit" disabled={isSubmitting || !watch('cell_id')}>
+              <Button 
+                type="submit" 
+                disabled={isSubmitting || !watch('cell_id')}
+                onClick={() => performanceTracker.trackInteraction('click', 'submit-button')}
+              >
                 {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 {editingId ? 'Update' : 'Create'} Machine
               </Button>
@@ -630,42 +752,107 @@ export default function MachineForm() {
           </form>
         </CardContent>
       </Card>
+        </TabsContent>
+        
+        <TabsContent value="bulk" className="space-y-6">
+          <MassUploader
+            tableName="machine_resources"
+            entityName="Machine"
+            sampleData={sampleMachineData}
+            onUploadComplete={fetchMachines}
+            requiredFields={['name', 'cell_id']}
+            fieldDescriptions={{
+              name: 'Machine display name',
+              capacity: 'Maximum concurrent jobs (default: 1)',
+              cost_per_hour: 'Operating cost per hour',
+              cell_id: 'Work cell ID (required)',
+              efficiency_rating: 'Efficiency (0.0 to 1.0)',
+              uptime_target_percent: 'Target uptime (0.0 to 1.0)'
+            }}
+          />
+        </TabsContent>
+      </Tabs>
 
-      {/* Machines List */}
+      {/* Advanced Machines List */}
       <Card>
         <CardHeader>
-          <CardTitle>Machines</CardTitle>
-          <CardDescription>Manage existing machines</CardDescription>
+          <CardTitle>Machines ({advancedTable.filteredCount} of {advancedTable.totalCount})</CardTitle>
+          <CardDescription>Manage existing machines with advanced filtering and bulk operations</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          {/* Advanced Filter */}
+          <AdvancedFilter
+            options={filterOptions}
+            values={advancedTable.filters}
+            onChange={advancedTable.setFilters}
+            placeholder="Search machines..."
+          />
+
+          {/* Bulk Operations */}
+          <BulkOperations
+            items={advancedTable.filteredItems}
+            selectedItems={advancedTable.selectedItems}
+            onToggleSelection={advancedTable.toggleSelection}
+            onSelectAll={advancedTable.selectAll}
+            onClearSelection={advancedTable.clearSelection}
+            onBulkDelete={handleBulkDelete}
+            onBulkEdit={handleBulkToggleActive}
+            getId={(machine) => machine.machine_resource_id}
+            isSelectionMode={advancedTable.isSelectionMode}
+            onEnterSelectionMode={advancedTable.enterSelectionMode}
+          />
+
           {loading ? (
             <div className="flex justify-center py-4">
               <Loader2 className="h-6 w-6 animate-spin" />
             </div>
-          ) : machines.length === 0 ? (
-            <p className="text-center text-gray-500 py-4">No machines found</p>
+          ) : advancedTable.isEmpty ? (
+            <p className="text-center text-gray-500 py-4">
+              {advancedTable.filters.length > 0 ? 'No machines match your filters' : 'No machines found'}
+            </p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full border-collapse">
                 <thead>
                   <tr className="border-b">
-                    <th className="text-left p-2">Name</th>
-                    <th className="text-left p-2">Type</th>
-                    <th className="text-left p-2">Department</th>
-                    <th className="text-left p-2">Capacity</th>
-                    <th className="text-left p-2">Cost/Hour</th>
-                    <th className="text-left p-2">Efficiency</th>
-                    <th className="text-left p-2">Uptime Target</th>
-                    <th className="text-left p-2">Status</th>
-                    <th className="text-left p-2">Actions</th>
+                    {advancedTable.isSelectionMode && (
+                      <th className="text-left p-2 w-12">
+                        <input
+                          type="checkbox"
+                          checked={advancedTable.selectedItems.size === advancedTable.filteredItems.length}
+                          onChange={() => {
+                            advancedTable.selectedItems.size === advancedTable.filteredItems.length ? advancedTable.clearSelection() : advancedTable.selectAll()
+                          }}
+                          className="rounded"
+                        />
+                      </th>
+                    )}
+                    <th className="text-left p-2 font-medium cursor-pointer hover:bg-gray-50" onClick={() => advancedTable.setSortBy('name')}>Name ↕</th>
+                    <th className="text-left p-2 font-medium">Type</th>
+                    <th className="text-left p-2 font-medium">Department</th>
+                    <th className="text-left p-2 font-medium">Capacity</th>
+                    <th className="text-left p-2 font-medium">Cost/Hour</th>
+                    <th className="text-left p-2 font-medium">Efficiency</th>
+                    <th className="text-left p-2 font-medium">Status</th>
+                    <th className="text-left p-2 font-medium">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {machines.map((machine) => {
+                  {advancedTable.filteredItems.map((machine) => {
                     const department = departments.find(d => d.department_id === machine.department_id)
                     const workCell = workCells.find(c => c.cell_id === machine.cell_id)
                     return (
                       <tr key={machine.machine_resource_id} className="border-b hover:bg-gray-50">
+                        {advancedTable.isSelectionMode && (
+                          <td className="p-2">
+                            <input
+                              type="checkbox"
+                              checked={advancedTable.selectedItems.has(machine.machine_resource_id)}
+                              onChange={() => advancedTable.toggleSelection(machine.machine_resource_id)}
+                              className="rounded"
+                            />
+                          </td>
+                        )}
                         <td className="p-2 font-medium">{machine.name}</td>
                         <td className="p-2">{machine.machine_type || '-'}</td>
                         <td className="p-2">
@@ -677,7 +864,6 @@ export default function MachineForm() {
                         <td className="p-2">{machine.capacity}</td>
                         <td className="p-2">${machine.cost_per_hour.toFixed(2)}</td>
                         <td className="p-2">{machine.efficiency_rating.toFixed(1)}</td>
-                        <td className="p-2">{machine.uptime_target_percent}%</td>
                         <td className="p-2">
                           <span className={`px-2 py-1 rounded-full text-xs ${
                             machine.is_active 
@@ -692,14 +878,35 @@ export default function MachineForm() {
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => handleEdit(machine)}
+                              onClick={() => {
+                                performanceTracker.trackInteraction('click', 'edit-button')
+                                handleEdit(machine)
+                              }}
+                              disabled={loading}
                             >
                               <Edit className="h-4 w-4" />
                             </Button>
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => handleDelete(machine.machine_resource_id)}
+                              onClick={() => {
+                                performanceTracker.trackInteraction('click', 'toggle-active-button')
+                                handleBulkToggleActive([machine.machine_resource_id])
+                              }}
+                              className={machine.is_active ? "text-orange-600 hover:bg-orange-50" : "text-green-600 hover:bg-green-50"}
+                              disabled={loading}
+                            >
+                              {machine.is_active ? "Deactivate" : "Reactivate"}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                performanceTracker.trackInteraction('click', 'delete-button')
+                                handleDelete(machine.machine_resource_id)
+                              }}
+                              className="text-red-600 hover:bg-red-50"
+                              disabled={loading}
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>

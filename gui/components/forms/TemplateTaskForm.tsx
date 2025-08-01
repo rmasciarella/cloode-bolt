@@ -4,13 +4,16 @@ import { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/hooks/use-toast'
+import { useFormPerformance } from '@/lib/hooks/use-form-performance'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Loader2, Edit, Trash2 } from 'lucide-react'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { MassUploader } from '@/components/ui/mass-uploader'
+import { Loader2, Edit, Trash2, Upload } from 'lucide-react'
 
 type OptimizedTask = {
   optimized_task_id: string
@@ -72,6 +75,9 @@ export default function OptimizedTaskForm() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const { toast } = useToast()
+
+  // Performance monitoring
+  const performanceTracker = useFormPerformance('template-task-form')
 
   const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<OptimizedTaskFormData>({
     defaultValues: {
@@ -263,10 +269,30 @@ export default function OptimizedTaskForm() {
     setEditingId(null)
   }
 
+  const sampleTemplateTaskData = {
+    pattern_id: '',
+    name: 'Assembly Step 1',
+    position: 1,
+    department_id: null,
+    is_unattended: false,
+    is_setup: false,
+    sequence_id: null,
+    min_operators: 1,
+    max_operators: 2,
+    operator_efficiency_curve: 'linear'
+  }
+
   return (
     <div className="space-y-6">
-      {/* Form Card */}
-      <Card>
+      <Tabs defaultValue="form" className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="form">Single Entry</TabsTrigger>
+          <TabsTrigger value="bulk">Mass Upload</TabsTrigger>
+        </TabsList>
+        
+        <TabsContent value="form" className="space-y-6">
+          {/* Form Card */}
+          <Card>
         <CardHeader>
           <CardTitle>{editingId ? 'Edit Optimized Task' : 'Create New Optimized Task'}</CardTitle>
           <CardDescription>
@@ -452,6 +478,29 @@ export default function OptimizedTaskForm() {
           </form>
         </CardContent>
       </Card>
+        </TabsContent>
+        
+        <TabsContent value="bulk" className="space-y-6">
+          <MassUploader
+            tableName="optimized_tasks"
+            entityName="Template Task"
+            sampleData={sampleTemplateTaskData}
+            onUploadComplete={fetchOptimizedTasks}
+            requiredFields={['pattern_id', 'name', 'position']}
+            fieldDescriptions={{
+              pattern_id: 'Job optimized pattern ID (required)',
+              name: 'Task display name',
+              position: 'Task position in sequence (integer)',
+              department_id: 'Department ID where task is performed',
+              min_operators: 'Minimum operators required (default: 1)',
+              max_operators: 'Maximum operators that can work (default: 1)',
+              is_unattended: 'Can run without supervision (true/false)',
+              is_setup: 'Is a setup/preparation task (true/false)',
+              operator_efficiency_curve: 'linear, exponential, logarithmic, plateau'
+            }}
+          />
+        </TabsContent>
+      </Tabs>
 
       {/* Template Tasks List */}
       <Card>

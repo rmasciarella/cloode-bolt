@@ -78,6 +78,13 @@ export default function EnhancedHomePage() {
     loadNavigationSections()
   }, [execute])
 
+  const toggleSection = (sectionTitle: string) => {
+    setExpandedSections(prev => ({
+      ...prev,
+      [sectionTitle]: !prev[sectionTitle]
+    }))
+  }
+
   const handleNavigationChange = async (newSection: string) => {
     // Execute permission and guard hooks
     const canNavigate = await execute('beforeNavigationChange', activeSection, newSection)

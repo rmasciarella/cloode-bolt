@@ -74,7 +74,6 @@ export function MassUploader({
     const result = Papa.parse<Record<string, any>>(text, {
       header: true,
       skipEmptyLines: true,
-      trimHeaders: true,
       transform: (value: string) => {
         // Convert empty strings to null
         if (value === '') return null

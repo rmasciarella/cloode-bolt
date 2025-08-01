@@ -9,7 +9,10 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Loader2, Edit, Trash2 } from 'lucide-react'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { MassUploader } from '@/components/ui/mass-uploader'
+import { Loader2, Edit, Trash2, Upload } from 'lucide-react'
+import { useFormPerformanceMonitoring } from '@/lib/hooks/use-form-performance'
 
 type JobInstance = {
   instance_id: string
@@ -76,7 +79,7 @@ export default function JobInstanceForm() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const { toast } = useToast()
 
-  const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<JobInstanceFormData>({
+  const form = useForm<JobInstanceFormData>({
     defaultValues: {
       template_id: '',  // FIXED: Changed from pattern_id
       name: '',
@@ -93,6 +96,27 @@ export default function JobInstanceForm() {
       estimated_duration_hours: 0
     }
   })
+
+  const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = form
+
+  // Initialize performance monitoring
+  const performanceTracker = useFormPerformanceMonitoring('JobInstanceForm')
+  
+  // Track validation errors
+  useEffect(() => {
+    if (Object.keys(errors).length > 0) {
+      Object.keys(errors).forEach(field => {
+        performanceTracker.trackValidation(field, true, errors[field]?.message)
+      })
+    }
+  }, [errors, performanceTracker])
+  
+  // Finalize metrics on unmount
+  useEffect(() => {
+    return () => {
+      performanceTracker.finalizeMetrics()
+    }
+  }, [performanceTracker])
 
   const fetchJobInstances = useCallback(async () => {
     setLoading(true)
@@ -156,7 +180,9 @@ export default function JobInstanceForm() {
   }, [fetchJobInstances, fetchJobTemplates, fetchDepartments])
 
   const onSubmit = async (data: JobInstanceFormData) => {
+    performanceTracker.trackSubmissionStart()
     setIsSubmitting(true)
+    
     try {
       const formData = {
         template_id: data.template_id,  // Backward compatibility
@@ -203,8 +229,11 @@ export default function JobInstanceForm() {
       reset()
       setEditingId(null)
       fetchJobInstances()
+      performanceTracker.trackSubmissionEnd(true)
     } catch (error) {
       console.error('Error saving job instance:', error)
+      performanceTracker.trackSubmissionEnd(false)
+      performanceTracker.trackValidation('submission', true, String(error))
       toast({
         title: "Error",
         description: "Failed to save job instance",
@@ -263,10 +292,54 @@ export default function JobInstanceForm() {
     setEditingId(null)
   }
 
+  const sampleJobInstanceData = {
+    template_id: '',
+    pattern_id: '',
+    name: 'Production Run #001',
+    department_id: null,
+    priority: 1,
+    due_date: null,
+    earliest_start_date: new Date().toISOString().split('T')[0],
+    customer_order_id: 'ORD-2024-001',
+    batch_id: 'BATCH-001',
+    quantity: 100,
+    estimated_cost: 1500.00,
+    revenue_value: 2000.00,
+    status: 'pending',
+    estimated_duration_hours: 8.0
+  }
+
+  // Performance monitoring display (development only)
+  const isDevelopment = process.env.NODE_ENV === 'development'
+
   return (
     <div className="space-y-6">
-      {/* Form Card */}
-      <Card>
+        {/* Performance Monitoring Display (Development Only) */}
+        {isDevelopment && (
+          <Card className="border-blue-200 bg-blue-50">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm text-blue-800">Performance Metrics (Dev)</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <div className="grid grid-cols-2 gap-2 text-xs text-blue-700">
+                <div>Load Time: {performanceTracker.loadTime || 0}ms</div>
+                <div>Interactions: {performanceTracker.interactionCount}</div>
+                <div>Errors: {performanceTracker.errorCount}</div>
+                <div>Submission Time: {performanceTracker.submissionTime || 0}ms</div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        <Tabs defaultValue="form" className="w-full">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="form">Single Entry</TabsTrigger>
+            <TabsTrigger value="bulk">Mass Upload</TabsTrigger>
+          </TabsList>
+        
+        <TabsContent value="form" className="space-y-6">
+          {/* Form Card */}
+          <Card>
         <CardHeader>
           <CardTitle>{editingId ? 'Edit Job Instance' : 'Create New Job Instance'}</CardTitle>
           <CardDescription>
@@ -281,9 +354,14 @@ export default function JobInstanceForm() {
                 <Label htmlFor="template_id">Job Template *</Label>
                 <Select 
                   value={watch('template_id')} 
-                  onValueChange={(value) => setValue('template_id', value)}
+                  onValueChange={(value) => {
+                    performanceTracker.trackInteraction('change', 'select_field')
+                    setValue('template_id', value)
+                  }}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger 
+                    onFocus={() => performanceTracker.trackInteraction('focus', 'template_id')}
+                  >
                     <SelectValue placeholder="Select job template" />
                   </SelectTrigger>
                   <SelectContent>
@@ -306,6 +384,8 @@ export default function JobInstanceForm() {
                     required: 'Job instance name is required',
                     maxLength: { value: 255, message: 'Name must be 255 characters or less' }
                   })}
+                  onFocus={() => performanceTracker.trackInteraction('focus', 'name')}
+                  onChange={(e) => performanceTracker.trackInteraction('change', 'name')}
                   placeholder="e.g., Production Run #001"
                 />
                 {errors.name && <p className="text-sm text-red-600">{errors.name.message}</p>}
@@ -316,9 +396,14 @@ export default function JobInstanceForm() {
                 <Label htmlFor="department_id">Department</Label>
                 <Select 
                   value={watch('department_id')} 
-                  onValueChange={(value) => setValue('department_id', value === 'none' ? '' : value)}
+                  onValueChange={(value) => {
+                    performanceTracker.trackInteraction('change', 'select_field')
+                    setValue('department_id', value === 'none' ? '' : value)
+                  }}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger 
+                    onFocus={() => performanceTracker.trackInteraction('focus', 'department_id')}
+                  >
                     <SelectValue placeholder="Select department" />
                   </SelectTrigger>
                   <SelectContent>
@@ -363,6 +448,8 @@ export default function JobInstanceForm() {
                     valueAsNumber: true,
                     min: { value: 1, message: 'Priority must be at least 1' }
                   })}
+                  onFocus={() => performanceTracker.trackInteraction('focus', 'priority')}
+                  onChange={(e) => performanceTracker.trackInteraction('change', 'priority')}
                 />
                 <p className="text-xs text-gray-500">Higher numbers = higher priority</p>
                 {errors.priority && <p className="text-sm text-red-600">{errors.priority.message}</p>}
@@ -491,6 +578,30 @@ export default function JobInstanceForm() {
           </form>
         </CardContent>
       </Card>
+        </TabsContent>
+        
+        <TabsContent value="bulk" className="space-y-6">
+          <MassUploader
+            tableName="job_instances"
+            entityName="Job Instance"
+            sampleData={sampleJobInstanceData}
+            onUploadComplete={fetchJobInstances}
+            requiredFields={['template_id', 'name', 'earliest_start_date']}
+            fieldDescriptions={{
+              template_id: 'Job template ID (required)',
+              pattern_id: 'Pattern ID (same as template_id for compatibility)',
+              name: 'Job instance display name',
+              priority: 'Job priority (higher numbers = higher priority)',
+              due_date: 'Target completion date (YYYY-MM-DD)',
+              earliest_start_date: 'Earliest possible start date (YYYY-MM-DD)',
+              quantity: 'Number of items to produce',
+              estimated_cost: 'Estimated production cost',
+              revenue_value: 'Expected revenue from this job',
+              status: 'pending, scheduled, in_progress, completed, cancelled, on_hold'
+            }}
+          />
+        </TabsContent>
+      </Tabs>
 
       {/* Job Instances List */}
       <Card>
@@ -590,6 +701,6 @@ export default function JobInstanceForm() {
           )}
         </CardContent>
       </Card>
-    </div>
+      </div>
   )
 }

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { departmentService } from '@/lib/services'
@@ -15,10 +15,17 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { TimeInput } from '@/components/ui/time-input'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { MassUploader } from '@/components/ui/mass-uploader'
+import { AdvancedFilter, BulkOperations, useAdvancedTable } from '@/components/ui/advanced-patterns'
 import { indexToTime12, getTimeRangeDescription } from '@/lib/timeUtils'
-import { Loader2, Plus, Edit, Trash2 } from 'lucide-react'
+import { performanceMonitor } from '@/lib/performance/monitoring'
+import { Loader2, Plus, Edit, Trash2, Upload, Search, Filter } from 'lucide-react'
 
 type Department = Database['public']['Tables']['departments']['Row']
+
+// Import the performance monitoring hook
+import { useFormPerformanceMonitoring } from '@/lib/hooks/use-form-performance'
 
 export default function DepartmentForm() {
   const [departments, setDepartments] = useState<Department[]>([])
@@ -26,6 +33,72 @@ export default function DepartmentForm() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const { toast } = useToast()
+  
+  // Performance tracking using the standard hook
+  const performanceTracker = useFormPerformanceMonitoring('DepartmentForm')
+
+  // Advanced table functionality
+  const advancedTable = useAdvancedTable(
+    departments,
+    (dept) => dept.department_id,
+    {
+      enableFiltering: true,
+      enableBulkOperations: true,
+      enableSorting: true
+    }
+  )
+
+  const filterOptions = [
+    { key: 'name', label: 'Name', type: 'text' as const },
+    { key: 'code', label: 'Code', type: 'text' as const },
+    { key: 'cost_center', label: 'Cost Center', type: 'text' as const },
+    { key: 'is_active', label: 'Active', type: 'boolean' as const },
+    { key: 'overtime_allowed', label: 'Overtime Allowed', type: 'boolean' as const }
+  ]
+
+  // Bulk operations handlers
+  const handleBulkDelete = async (ids: string[]) => {
+    for (const id of ids) {
+      const response = await departmentService.delete(id)
+      if (!response.success) {
+        toast({
+          title: "Error",
+          description: `Failed to delete department: ${response.error}`,
+          variant: "destructive"
+        })
+        return
+      }
+    }
+    toast({
+      title: "Success",
+      description: `Successfully deleted ${ids.length} departments`
+    })
+    fetchDepartments()
+    advancedTable.clearSelection()
+  }
+
+  const handleBulkToggleActive = async (ids: string[]) => {
+    for (const id of ids) {
+      const dept = departments.find(d => d.department_id === id)
+      if (dept) {
+        const response = await departmentService.update(id, { is_active: !dept.is_active })
+        if (!response.success) {
+          toast({
+            title: "Error",
+            description: `Failed to update department: ${response.error}`,
+            variant: "destructive"
+          })
+          return
+        }
+      }
+    }
+    toast({
+      title: "Success",
+      description: `Successfully updated ${ids.length} departments`
+    })
+    fetchDepartments()
+    advancedTable.clearSelection()
+  }
 
   const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<DepartmentFormData>({
     resolver: zodResolver(departmentFormSchema),
@@ -41,22 +114,53 @@ export default function DepartmentForm() {
       is_active: true
     }
   })
+  
+  // Track validation errors when form state changes
+  useEffect(() => {
+    if (Object.keys(errors).length > 0) {
+      Object.keys(errors).forEach(field => {
+        performanceTracker.trackValidation(field, true, errors[field]?.message)
+      })
+    }
+  }, [errors, performanceTracker])
+  
+  // Ensure metrics are finalized on unmount
+  useEffect(() => {
+    return () => {
+      performanceTracker.finalizeMetrics()
+    }
+  }, [performanceTracker])
 
   const fetchDepartments = useCallback(async () => {
     setLoading(true)
-    const response = await departmentService.getAll()
+    const startTime = performance.now()
     
-    if (response.success && response.data) {
-      setDepartments(response.data)
-    } else {
-      console.error('Error fetching departments:', response.error)
-      toast({
-        title: "Error",
-        description: response.error || "Failed to fetch departments",
-        variant: "destructive"
-      })
+    try {
+      const response = await departmentService.getAll()
+      
+      // Record data loading performance
+      const loadTime = performance.now() - startTime
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[FORM-PERF] DepartmentForm data load: ${loadTime}ms`)
+      }
+      
+      if (response.success && response.data) {
+        setDepartments(response.data)
+      } else {
+        console.error('Error fetching departments:', response.error)
+        performanceTracker.trackValidation('data_load', true, response.error || 'Data load failed')
+        toast({
+          title: "Error",
+          description: response.error || "Failed to fetch departments",
+          variant: "destructive"
+        })
+      }
+    } catch (error) {
+      performanceTracker.trackValidation('data_load', true, String(error))
+      console.error('Error in fetchDepartments:', error)
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }, [toast])
 
   useEffect(() => {
@@ -65,42 +169,61 @@ export default function DepartmentForm() {
 
   const onSubmit = async (data: DepartmentFormData) => {
     setIsSubmitting(true)
+    performanceTracker.trackSubmissionStart()
     
-    // Ensure required fields are present
-    const submitData = {
-      ...data,
-      code: data.code || '',
-      name: data.name || ''
-    }
-    
-    let response
-    if (editingId) {
-      response = await departmentService.update(editingId, submitData)
-    } else {
-      response = await departmentService.create(submitData)
-    }
+    try {
+      // Start validation timing
+      performanceTracker.startValidation('form_submission')
+      
+      // Ensure required fields are present
+      const submitData = {
+        ...data,
+        code: data.code || '',
+        name: data.name || ''
+      }
+      
+      performanceTracker.trackValidation('form_submission', false)
+      
+      let response
+      if (editingId) {
+        response = await departmentService.update(editingId, submitData)
+      } else {
+        response = await departmentService.create(submitData)
+      }
 
-    if (response.success) {
-      toast({
-        title: "Success",
-        description: `Department ${editingId ? 'updated' : 'created'} successfully`
-      })
-      reset()
-      setEditingId(null)
-      fetchDepartments()
-    } else {
-      console.error('Error saving department:', response.error)
-      toast({
-        title: "Error",
-        description: response.error || "Failed to save department",
-        variant: "destructive"
-      })
+      if (response.success) {
+        performanceTracker.trackSubmissionEnd(true)
+        
+        toast({
+          title: "Success",
+          description: `Department ${editingId ? 'updated' : 'created'} successfully`
+        })
+        reset()
+        setEditingId(null)
+        fetchDepartments()
+      } else {
+        performanceTracker.trackSubmissionEnd(false)
+        performanceTracker.trackValidation('submission', true, response.error || 'Submission failed')
+        
+        console.error('Error saving department:', response.error)
+        toast({
+          title: "Error",
+          description: response.error || "Failed to save department",
+          variant: "destructive"
+        })
+      }
+    } catch (error) {
+      performanceTracker.trackSubmissionEnd(false)
+      performanceTracker.trackValidation('submission', true, String(error))
+      console.error('Error in onSubmit:', error)
+    } finally {
+      setIsSubmitting(false)
     }
-    
-    setIsSubmitting(false)
   }
 
   const handleEdit = (department: Department) => {
+    performanceTracker.trackInteraction('click', 'edit_button')
+    
     setEditingId(department.department_id)
     setValue('code', department.code)
     setValue('name', department.name)
@@ -114,12 +237,19 @@ export default function DepartmentForm() {
   }
 
   const handleDelete = async (id: string) => {
+    performanceTracker.trackInteraction('click', 'delete_button')
+    
     const department = departments.find(d => d.department_id === id)
     if (!department) return
 
     if (!confirm(`Are you sure you want to delete "${department.name}"?\n\nThis action cannot be undone.`)) return
 
+    const startTime = performance.now()
     const response = await departmentService.delete(id)
+    const deleteTime = performance.now() - startTime
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`[FORM-PERF] DepartmentForm delete: ${deleteTime}ms`)
+    }
     
     if (response.success) {
       toast({
@@ -152,6 +282,8 @@ export default function DepartmentForm() {
   }
 
   const handleToggleActive = async (id: string) => {
+    performanceTracker.trackInteraction('click', 'toggle_active_button')
+    
     const department = departments.find(d => d.department_id === id)
     if (!department) return
 
@@ -160,7 +292,12 @@ export default function DepartmentForm() {
     
     if (!confirm(`Are you sure you want to ${action} "${department.name}"?`)) return
 
+    const startTime = performance.now()
     const response = await departmentService.toggleActive(id)
+    const toggleTime = performance.now() - startTime
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`[FORM-PERF] DepartmentForm toggle: ${toggleTime}ms`)
+    }
     
     if (response.success) {
       toast({
@@ -179,8 +316,21 @@ export default function DepartmentForm() {
   }
 
   const handleCancel = () => {
+    performanceTracker.trackInteraction('click', 'cancel_button')
     reset()
     setEditingId(null)
+  }
+
+  const sampleDepartmentData = {
+    code: 'PROD',
+    name: 'Production Department',
+    description: 'Main production operations',
+    parent_department_id: null,
+    cost_center: 'CC-PROD-001',
+    default_shift_start: 32, // 8:00 AM
+    default_shift_end: 64,   // 4:00 PM
+    overtime_allowed: true,
+    is_active: true
   }
 
 
@@ -199,8 +349,16 @@ export default function DepartmentForm() {
 
   return (
     <div className="space-y-6">
-      {/* Form Card */}
-      <Card>
+      {/* Tabs for Single Entry and Bulk Upload */}
+      <Tabs defaultValue="form" className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="form">Single Entry</TabsTrigger>
+          <TabsTrigger value="bulk">Mass Upload</TabsTrigger>
+        </TabsList>
+        
+        <TabsContent value="form" className="space-y-6">
+          {/* Form Card */}
+          <Card>
         <CardHeader>
           <CardTitle>{editingId ? 'Edit Department' : 'Create New Department'}</CardTitle>
           <CardDescription>
@@ -220,6 +378,11 @@ export default function DepartmentForm() {
                     maxLength: { value: 50, message: 'Code must be 50 characters or less' }
                   })}
                   placeholder="e.g., production, quality, DEPT_A"
+                  onFocus={() => performanceTracker.trackInteraction('focus', 'code')}
+                  onChange={(e) => {
+                    performanceTracker.trackInteraction('change', 'code')
+                    // The register function handles the actual onChange
+                  }}
                 />
                 {errors.code && <p className="text-sm text-red-600">{errors.code.message}</p>}
               </div>
@@ -234,6 +397,10 @@ export default function DepartmentForm() {
                     maxLength: { value: 255, message: 'Name must be 255 characters or less' }
                   })}
                   placeholder="e.g., Production Department"
+                  onFocus={() => performanceTracker.trackInteraction('focus', 'name')}
+                  onChange={(e) => {
+                    performanceTracker.trackInteraction('change', 'name')
+                  }}
                 />
                 {errors.name && <p className="text-sm text-red-600">{errors.name.message}</p>}
               </div>
@@ -243,7 +410,13 @@ export default function DepartmentForm() {
                 <Label htmlFor="parent_department_id">Parent Department</Label>
                 <Select 
                   value={watch('parent_department_id') || undefined}
-                  onValueChange={(value) => setValue('parent_department_id', value)}
+                  onValueChange={(value) => {
+                    performanceTracker.trackInteraction('change', 'parent_department_id')
+                    setValue('parent_department_id', value)
+                  }}
+                  onOpenChange={(open) => {
+                    if (open) performanceTracker.trackInteraction('focus', 'parent_department_id')
+                  }}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select parent department" />
@@ -270,6 +443,10 @@ export default function DepartmentForm() {
                   id="cost_center"
                   {...register('cost_center')}
                   placeholder="e.g., CC-PROD-001"
+                  onFocus={() => performanceTracker.trackInteraction('focus', 'cost_center')}
+                  onChange={(e) => {
+                    performanceTracker.trackInteraction('change', 'cost_center')
+                  }}
                 />
                 <p className="text-xs text-gray-500">
                   Optional: For financial tracking and cost allocation (not currently mapped to solver constraints)
@@ -280,7 +457,10 @@ export default function DepartmentForm() {
               <TimeInput
                 label="Default Shift Start Time"
                 value={watch('default_shift_start') || 32}
-                onChange={(index) => setValue('default_shift_start', index)}
+                onChange={(index) => {
+                  performanceTracker.trackInteraction('change', 'default_shift_start')
+                  setValue('default_shift_start', index)
+                }}
                 id="default_shift_start"
                 placeholder="Select start time"
                 helperText="Default start time for this department's shifts"
@@ -291,7 +471,10 @@ export default function DepartmentForm() {
               <TimeInput
                 label="Default Shift End Time"
                 value={watch('default_shift_end') || 64}
-                onChange={(index) => setValue('default_shift_end', index)}
+                onChange={(index) => {
+                  performanceTracker.trackInteraction('change', 'default_shift_end')
+                  setValue('default_shift_end', index)
+                }}
                 id="default_shift_end"
                 placeholder="Select end time"
                 helperText="Default end time for this department's shifts"
@@ -307,6 +490,10 @@ export default function DepartmentForm() {
                 {...register('description')}
                 placeholder="Department description and responsibilities"
                 rows={3}
+                onFocus={() => performanceTracker.trackInteraction('focus', 'description')}
+                onChange={(e) => {
+                  performanceTracker.trackInteraction('change', 'description')
+                }}
               />
             </div>
 
@@ -316,7 +503,10 @@ export default function DepartmentForm() {
                 <Checkbox
                   id="overtime_allowed"
                   checked={watch('overtime_allowed')}
-                  onCheckedChange={(checked) => setValue('overtime_allowed', checked as boolean)}
+                  onCheckedChange={(checked) => {
+                    performanceTracker.trackInteraction('change', 'overtime_allowed')
+                    setValue('overtime_allowed', checked as boolean)
+                  }}
                 />
                 <Label htmlFor="overtime_allowed">Overtime Allowed</Label>
               </div>
@@ -325,7 +515,10 @@ export default function DepartmentForm() {
                 <Checkbox
                   id="is_active"
                   checked={watch('is_active')}
-                  onCheckedChange={(checked) => setValue('is_active', checked as boolean)}
+                  onCheckedChange={(checked) => {
+                    performanceTracker.trackInteraction('change', 'is_active')
+                    setValue('is_active', checked as boolean)
+                  }}
                 />
                 <Label htmlFor="is_active">Active</Label>
               </div>
@@ -338,7 +531,11 @@ export default function DepartmentForm() {
                   Cancel
                 </Button>
               )}
-              <Button type="submit" disabled={isSubmitting}>
+              <Button 
+                type="submit" 
+                disabled={isSubmitting}
+                onClick={() => performanceTracker.trackInteraction('click', 'submit_button')}
+              >
                 {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 {editingId ? 'Update' : 'Create'} Department
               </Button>
@@ -346,36 +543,104 @@ export default function DepartmentForm() {
           </form>
         </CardContent>
       </Card>
+        </TabsContent>
+        
+        <TabsContent value="bulk" className="space-y-6">
+          <MassUploader
+            tableName="departments"
+            entityName="Department"
+            sampleData={sampleDepartmentData}
+            onUploadComplete={fetchDepartments}
+            requiredFields={['code', 'name']}
+            fieldDescriptions={{
+              code: 'Unique department code',
+              name: 'Department display name',
+              default_shift_start: 'Start time (15-min intervals from midnight)',
+              default_shift_end: 'End time (15-min intervals from midnight)'
+            }}
+          />
+        </TabsContent>
+      </Tabs>
 
-      {/* Departments List */}
+      {/* Advanced Departments List */}
       <Card>
         <CardHeader>
-          <CardTitle>Departments</CardTitle>
-          <CardDescription>Manage existing departments</CardDescription>
+          <CardTitle>Departments ({advancedTable.filteredCount} of {advancedTable.totalCount})</CardTitle>
+          <CardDescription>Manage existing departments with advanced filtering and bulk operations</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          {/* Advanced Filter */}
+          <AdvancedFilter
+            options={filterOptions}
+            values={advancedTable.filters}
+            onChange={advancedTable.setFilters}
+            placeholder="Search departments..."
+          />
+
+          {/* Bulk Operations */}
+          <BulkOperations
+            items={advancedTable.filteredItems}
+            selectedItems={advancedTable.selectedItems}
+            onToggleSelection={advancedTable.toggleSelection}
+            onSelectAll={advancedTable.selectAll}
+            onClearSelection={advancedTable.clearSelection}
+            onBulkDelete={handleBulkDelete}
+            onBulkEdit={handleBulkToggleActive}
+            getId={(dept) => dept.department_id}
+            isSelectionMode={advancedTable.isSelectionMode}
+            onEnterSelectionMode={advancedTable.enterSelectionMode}
+          />
+
           {loading ? (
             <div className="flex justify-center py-4">
               <Loader2 className="h-6 w-6 animate-spin" />
             </div>
-          ) : departments.length === 0 ? (
-            <p className="text-center text-gray-500 py-4">No departments found</p>
+          ) : advancedTable.isEmpty ? (
+            <p className="text-center text-gray-500 py-4">
+              {advancedTable.filters.length > 0 ? 'No departments match your filters' : 'No departments found'}
+            </p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full border-collapse">
                 <thead>
                   <tr className="border-b">
-                    <th className="text-left p-2">Code</th>
-                    <th className="text-left p-2">Name</th>
-                    <th className="text-left p-2">Cost Center</th>
-                    <th className="text-left p-2">Shift Times</th>
-                    <th className="text-left p-2">Status</th>
-                    <th className="text-left p-2">Actions</th>
+                    {advancedTable.isSelectionMode && (
+                      <th className="text-left p-2 w-12">
+                        <input
+                          type="checkbox"
+                          checked={advancedTable.selectedItems.size === advancedTable.filteredItems.length}
+                          onChange={() => {
+                            if (advancedTable.selectedItems.size === advancedTable.filteredItems.length) {
+                              advancedTable.clearSelection()
+                            } else {
+                              advancedTable.selectAll(advancedTable.filteredItems, (dept) => dept.department_id)
+                            }
+                          }}
+                          className="rounded"
+                        />
+                      </th>
+                    )}
+                    <th className="text-left p-2 font-medium cursor-pointer hover:bg-gray-50" onClick={() => advancedTable.setSortBy('code')}>Code ↕</th>
+                    <th className="text-left p-2 font-medium cursor-pointer hover:bg-gray-50" onClick={() => advancedTable.setSortBy('name')}>Name ↕</th>
+                    <th className="text-left p-2 font-medium">Cost Center</th>
+                    <th className="text-left p-2 font-medium">Shift Times</th>
+                    <th className="text-left p-2 font-medium">Status</th>
+                    <th className="text-left p-2 font-medium">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {departments.map((department) => (
+                  {advancedTable.filteredItems.map((department) => (
                     <tr key={department.department_id} className="border-b hover:bg-gray-50">
+                      {advancedTable.isSelectionMode && (
+                        <td className="p-2">
+                          <input
+                            type="checkbox"
+                            checked={advancedTable.selectedItems.has(department.department_id)}
+                            onChange={() => advancedTable.toggleSelection(department.department_id)}
+                            className="rounded"
+                          />
+                        </td>
+                      )}
                       <td className="p-2 font-medium">{department.code}</td>
                       <td className="p-2">{department.name}</td>
                       <td className="p-2">{department.cost_center || '-'}</td>
@@ -397,14 +662,16 @@ export default function DepartmentForm() {
                             size="sm"
                             variant="outline"
                             onClick={() => handleEdit(department)}
+                            disabled={loading}
                           >
                             <Edit className="h-4 w-4" />
                           </Button>
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => handleToggleActive(department.department_id)}
+                            onClick={() => handleBulkToggleActive([department.department_id])}
                             className={department.is_active ? "text-orange-600 hover:bg-orange-50" : "text-green-600 hover:bg-green-50"}
+                            disabled={loading}
                           >
                             {department.is_active ? "Deactivate" : "Reactivate"}
                           </Button>
@@ -412,6 +679,8 @@ export default function DepartmentForm() {
                             size="sm"
                             variant="outline"
                             onClick={() => handleDelete(department.department_id)}
+                            className="text-red-600 hover:bg-red-50"
+                            disabled={loading}
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>

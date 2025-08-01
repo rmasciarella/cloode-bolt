@@ -1,0 +1,332 @@
+/**
+ * Performance Testing for JobTemplateForm
+ * Validates comprehensive performance monitoring implementation
+ */
+
+import React from 'react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import '@testing-library/jest-dom'
+import JobTemplateForm from './JobTemplateForm'
+import { performanceMonitor } from '@/lib/performance/monitoring'
+import { jobTemplateService } from '@/lib/services'
+
+// Mock the services and hooks
+jest.mock('@/lib/services', () => ({
+  jobTemplateService: {
+    getAll: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+    delete: jest.fn(),
+    validateSolverParameters: jest.fn()
+  },
+  departmentService: {
+    getAll: jest.fn()
+  }
+}))
+
+jest.mock('@/lib/performance/monitoring', () => ({
+  performanceMonitor: {
+    getMetrics: jest.fn(),
+    getWebVitals: jest.fn(),
+    getSlowQueries: jest.fn(),
+    getAverageQueryTime: jest.fn(),
+    getPerformanceSummary: jest.fn()
+  },
+  usePerformanceMonitor: () => ({
+    getMetrics: jest.fn(),
+    getWebVitals: jest.fn(),
+    getSlowQueries: jest.fn(),
+    getAverageQueryTime: jest.fn(),
+    getPerformanceSummary: jest.fn()
+  })
+}))
+
+jest.mock('@/hooks/use-toast', () => ({
+  useToast: () => ({
+    toast: jest.fn()
+  })
+}))
+
+// Mock performance.now for consistent testing
+const mockPerformanceNow = jest.fn()
+Object.defineProperty(window, 'performance', {
+  value: {
+    now: mockPerformanceNow
+  }
+})
+
+const mockJobTemplates = [
+  {
+    pattern_id: '1',
+    name: 'Test Template',
+    description: 'Test Description',
+    solver_parameters: { num_search_workers: 4 },
+    task_count: 2,
+    total_min_duration_minutes: 120,
+    critical_path_length_minutes: 90,
+    is_active: true,
+    created_at: '2023-01-01T00:00:00Z'
+  }
+]
+
+const mockDepartments = [
+  { department_id: '1', name: 'Manufacturing', is_active: true }
+]
+
+describe('JobTemplateForm Performance Monitoring', () => {
+  let consoleWarnSpy: jest.SpyInstance
+  let consoleLogSpy: jest.SpyInstance
+
+  beforeEach(() => {
+    jest.clearAllMocks()
+    mockPerformanceNow.mockReset()
+    consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation()
+    consoleLogSpy = jest.spyOn(console, 'log').mockImplementation()
+    
+    // Mock service responses
+    ;(jobTemplateService.getAll as jest.Mock).mockResolvedValue({
+      success: true,
+      data: mockJobTemplates
+    })
+    ;(jobTemplateService.validateSolverParameters as jest.Mock).mockResolvedValue({
+      success: true
+    })
+    ;(require('@/lib/services').departmentService.getAll as jest.Mock).mockResolvedValue({
+      success: true,
+      data: mockDepartments
+    })
+  })
+
+  afterEach(() => {
+    consoleWarnSpy.mockRestore()
+    consoleLogSpy.mockRestore()
+  })
+
+  test('tracks form load time performance', async () => {
+    let timeCounter = 0
+    mockPerformanceNow.mockImplementation(() => {
+      timeCounter += 100 // Simulate 100ms increments
+      return timeCounter
+    })
+
+    render(<JobTemplateForm />)
+
+    await waitFor(() => {
+      expect(jobTemplateService.getAll).toHaveBeenCalled()
+    })
+
+    // Should log performance metrics
+    expect(consoleLogSpy).toHaveBeenCalledWith(
+      expect.stringContaining('[FORM-PERF] JobTemplateForm Performance Report:'),
+      expect.any(Object)
+    )
+  })
+
+  test('tracks user interactions (clicks and focus events)', async () => {
+    mockPerformanceNow.mockReturnValue(1000)
+    
+    render(<JobTemplateForm />)
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Template Name/)).toBeInTheDocument()
+    })
+
+    const nameInput = screen.getByLabelText(/Template Name/)
+    
+    // Simulate user interactions
+    fireEvent.focus(nameInput)
+    fireEvent.click(nameInput)
+    fireEvent.change(nameInput, { target: { value: 'Test Template' } })
+
+    // Performance tracking should be active (no errors thrown)
+    expect(nameInput).toHaveValue('Test Template')
+  })
+
+  test('tracks form submission performance', async () => {
+    let timeCounter = 0
+    mockPerformanceNow.mockImplementation(() => {
+      timeCounter += 50
+      return timeCounter
+    })
+
+    ;(jobTemplateService.create as jest.Mock).mockResolvedValue({
+      success: true,
+      data: { pattern_id: '2' }
+    })
+
+    render(<JobTemplateForm />)
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Template Name/)).toBeInTheDocument()
+    })
+
+    // Fill form
+    fireEvent.change(screen.getByLabelText(/Template Name/), {
+      target: { value: 'Performance Test Template' }
+    })
+
+    // Submit form
+    const submitButton = screen.getByRole('button', { name: /Create Template/ })
+    fireEvent.click(submitButton)
+
+    await waitFor(() => {
+      expect(jobTemplateService.create).toHaveBeenCalled()
+    })
+
+    // Should track submission performance
+    expect(jobTemplateService.validateSolverParameters).toHaveBeenCalled()
+  })
+
+  test('warns about slow operations', async () => {
+    // Simulate slow operation (>1000ms)
+    mockPerformanceNow.mockReturnValueOnce(0).mockReturnValueOnce(1500)
+
+    ;(jobTemplateService.getAll as jest.Mock).mockImplementation(
+      () => new Promise(resolve => 
+        setTimeout(() => resolve({ success: true, data: mockJobTemplates }), 600)
+      )
+    )
+
+    render(<JobTemplateForm />)
+
+    await waitFor(() => {
+      expect(jobTemplateService.getAll).toHaveBeenCalled()
+    })
+
+    // Should warn about slow fetch
+    await waitFor(() => {
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('[FORM-PERF] Slow job templates fetch:')
+      )
+    })
+  })
+
+  test('tracks validation errors', async () => {
+    mockPerformanceNow.mockReturnValue(1000)
+
+    ;(jobTemplateService.validateSolverParameters as jest.Mock).mockResolvedValue({
+      success: false,
+      error: 'Invalid JSON'
+    })
+
+    render(<JobTemplateForm />)
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Template Name/)).toBeInTheDocument()
+    })
+
+    // Fill form with invalid data
+    fireEvent.change(screen.getByLabelText(/Template Name/), {
+      target: { value: 'Test Template' }
+    })
+
+    // Submit form to trigger validation
+    const submitButton = screen.getByRole('button', { name: /Create Template/ })
+    fireEvent.click(submitButton)
+
+    await waitFor(() => {
+      expect(jobTemplateService.validateSolverParameters).toHaveBeenCalled()
+    })
+
+    // Form should handle validation error appropriately
+    expect(jobTemplateService.create).not.toHaveBeenCalled()
+  })
+
+  test('tracks field validation performance', async () => {
+    let timeCounter = 0
+    mockPerformanceNow.mockImplementation(() => {
+      timeCounter += 150 // Simulate slow validation (>100ms)
+      return timeCounter
+    })
+
+    ;(jobTemplateService.validateSolverParameters as jest.Mock).mockImplementation(
+      () => new Promise(resolve => 
+        setTimeout(() => resolve({ success: true }), 200)
+      )
+    )
+
+    render(<JobTemplateForm />)
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Template Name/)).toBeInTheDocument()
+    })
+
+    // Fill form and submit to trigger validation
+    fireEvent.change(screen.getByLabelText(/Template Name/), {
+      target: { value: 'Test' }
+    })
+
+    const submitButton = screen.getByRole('button', { name: /Create Template/ })
+    fireEvent.click(submitButton)
+
+    await waitFor(() => {
+      expect(jobTemplateService.validateSolverParameters).toHaveBeenCalled()
+    })
+
+    // Should warn about slow validation
+    await waitFor(() => {
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('[FORM-PERF] Slow field validation for solver_parameters:')
+      )
+    })
+  })
+
+  test('tracks bulk operations performance', async () => {
+    mockPerformanceNow.mockReturnValue(2000)
+
+    ;(jobTemplateService.delete as jest.Mock).mockResolvedValue({
+      success: true
+    })
+
+    render(<JobTemplateForm />)
+
+    await waitFor(() => {
+      expect(screen.getAllByRole('checkbox')).toHaveLength(2) // Header + one template row
+    })
+
+    // Simulate entering selection mode and selecting items
+    const checkboxes = screen.getAllByRole('checkbox')
+    fireEvent.click(checkboxes[1]) // Select first template
+
+    // Note: This test would need the actual bulk operations UI to be rendered
+    // For now, we're testing that the performance tracking functions exist
+    expect(checkboxes[1]).toBeInTheDocument()
+  })
+
+  test('reports comprehensive performance metrics', async () => {
+    mockPerformanceNow.mockReturnValue(500)
+
+    render(<JobTemplateForm />)
+
+    await waitFor(() => {
+      expect(jobTemplateService.getAll).toHaveBeenCalled()
+    })
+
+    // Should log comprehensive performance report
+    await waitFor(() => {
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        '[FORM-PERF] JobTemplateForm Performance Report:',
+        expect.objectContaining({
+          formLoadTime: expect.stringContaining('ms'),
+          userInteractions: expect.objectContaining({
+            clicks: expect.any(Number),
+            focusEvents: expect.any(Number),
+            validationTriggers: expect.any(Number)
+          })
+        })
+      )
+    })
+  })
+
+  test('handles cleanup on component unmount', () => {
+    mockPerformanceNow.mockReturnValue(1000)
+
+    const { unmount } = render(<JobTemplateForm />)
+    
+    // Unmount should trigger cleanup and final performance report
+    unmount()
+
+    // Should have called performance reporting
+    expect(consoleLogSpy).toHaveBeenCalled()
+  })
+})

@@ -29,7 +29,7 @@ import { useJobTemplates, useCreateJobTemplate, useUpdateJobTemplate, useDeleteJ
 import { useRealtime, useOptimisticRealtime } from '@/lib/realtime/manager'
 import { AdvancedFilter, BulkOperations, useAdvancedTable } from '@/components/ui/advanced-patterns'
 import { FormErrorBoundary, useAsyncErrorHandler } from '@/components/error-boundary'
-import { usePerformanceMonitor } from '@/lib/performance/monitoring'
+import { usePerformanceMonitor } from '@/lib/performance'
 
 type JobTemplate = Database['public']['Tables']['job_optimized_patterns']['Row']
 
@@ -46,7 +46,7 @@ const filterOptions = [
   { key: 'name', label: 'Name', type: 'text' as const },
   { key: 'task_count', label: 'Task Count', type: 'number' as const },
   { key: 'total_min_duration_minutes', label: 'Duration (min)', type: 'number' as const },
-  { key: 'created_at', label: 'Created', type: 'date' as const }
+  { key: 'created_at', label: 'Created', type: 'text' as const }
 ]
 
 export default function JobTemplateFormEnhanced() {
@@ -86,7 +86,7 @@ export default function JobTemplateFormEnhanced() {
   const { applyOptimisticUpdate, clearOptimisticUpdate } = useOptimisticRealtime<JobTemplate>('job_optimized_patterns')
   
   // Performance monitoring
-  const performanceMonitor = usePerformanceMonitor()
+  const performanceMonitor = usePerformanceMonitor('JobTemplateFormEnhanced')
   
   // Error handling
   const { wrapAsync } = useAsyncErrorHandler()
@@ -113,7 +113,14 @@ export default function JobTemplateFormEnhanced() {
 
   // Performance metrics display
   const performanceStats = useMemo(() => {
-    return performanceMonitor.getPerformanceSummary()
+    const formMetrics = performanceMonitor.getFormMetrics()
+    return {
+      totalQueries: formMetrics.totalOperations,
+      averageQueryTime: formMetrics.submissionTimes.length > 0 
+        ? formMetrics.submissionTimes.reduce((a, b) => a + b, 0) / formMetrics.submissionTimes.length 
+        : 0,
+      slowQueries: formMetrics.submissionTimes.filter(time => time > 1000).length
+    }
   }, [performanceMonitor])
 
   const onSubmit = wrapAsync(async (data: any) => {
@@ -170,6 +177,13 @@ export default function JobTemplateFormEnhanced() {
     
     table.clearSelection()
   }, 'Bulk Job Template Deletion')
+
+  const handleBulkEdit = (ids: string[]) => {
+    // For job templates, bulk edit could toggle active status or modify solver parameters
+    // For now, just log the selected IDs - this can be extended later
+    console.log('Bulk edit requested for job templates:', ids)
+    // Could open a bulk edit dialog or perform bulk operations
+  }
 
   const handleCancel = () => {
     reset()
@@ -364,13 +378,14 @@ export default function JobTemplateFormEnhanced() {
               onSelectAll={() => table.selectAll(table.filteredItems, (item) => item.pattern_id)}
               onClearSelection={table.clearSelection}
               onBulkDelete={handleBulkDelete}
+              onBulkEdit={handleBulkEdit}
               getId={(item) => item.pattern_id}
               isSelectionMode={table.isSelectionMode}
               onEnterSelectionMode={table.enterSelectionMode}
             />
 
             {/* Results Summary */}
-            {table.filters.length > 0 && (
+            {Object.keys(table.filters).length > 0 && (
               <div className="text-sm text-muted-foreground">
                 Showing {table.filteredCount} of {table.totalCount} templates
               </div>
@@ -383,7 +398,7 @@ export default function JobTemplateFormEnhanced() {
               </div>
             ) : table.isEmpty ? (
               <div className="text-center py-8 text-muted-foreground">
-                {table.filters.length > 0 || table.searchTerm ? 
+                {Object.keys(table.filters).length > 0 ? 
                   'No templates match your search criteria' : 
                   'No job templates found'
                 }

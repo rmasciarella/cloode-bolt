@@ -1,4 +1,17 @@
 {
+  "name": "fresh-solver-gui",
+  "version": "1.0.0",
+  "description": "Fresh Solver GUI workspace",
+  "private": true,
+  "scripts": {
+    "build": "cd gui && npm run build",
+    "build:verify": "cd gui && npm run build:verify",
+    "dev": "cd gui && npm run dev",
+    "start": "cd gui && npm run start",
+    "test": "cd gui && npm run test",
+    "lint": "cd gui && npm run lint",
+    "type-check": "cd gui && npm run type-check"
+  },
   "dependencies": {
     "@playwright/mcp": "^0.0.32",
     "playwright": "^1.54.1"

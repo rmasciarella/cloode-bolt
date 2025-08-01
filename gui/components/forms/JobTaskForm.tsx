@@ -1,15 +1,20 @@
 "use client"
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useForm } from 'react-hook-form'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/hooks/use-toast'
+import { useFormPerformance } from '@/lib/hooks/use-form-performance'
+import { handleFormError, logUnmappedError } from '@/lib/utils/error-mapping'
+import { PerformanceDebugPanel } from '@/components/ui/performance-debug-panel'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Loader2, Edit, Trash2 } from 'lucide-react'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { MassUploader } from '@/components/ui/mass-uploader'
+import { Loader2, Edit, Trash2, Upload } from 'lucide-react'
 
 type JobTask = {
   assignment_id: string
@@ -58,6 +63,18 @@ type JobTaskFormData = {
   setup_time_minutes: number
 }
 
+
+const sampleJobTaskData = {
+  instance_id: "JOB_001",
+  optimized_task_id: "TASK_001", 
+  selected_mode_id: "MODE_001",
+  assigned_machine_id: "MACHINE_001",
+  start_time_minutes: 0,
+  end_time_minutes: 60,
+  actual_duration_minutes: 55,
+  setup_time_minutes: 5
+}
+
 export default function JobTaskForm() {
   const [jobTasks, setJobTasks] = useState<JobTask[]>([])
   const [jobInstances, setJobInstances] = useState<JobInstance[]>([])
@@ -68,6 +85,9 @@ export default function JobTaskForm() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const { toast } = useToast()
+  
+  // Performance monitoring with standardized hook
+  const performanceTracker = useFormPerformance('job-task-form')
 
   const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<JobTaskFormData>({
     defaultValues: {
@@ -82,6 +102,32 @@ export default function JobTaskForm() {
     }
   })
 
+  // Enhanced register function with performance tracking
+  const registerWithPerformance = useCallback((name: keyof JobTaskFormData, validation?: any) => {
+    return {
+      ...register(name, validation),
+      onFocus: (e: any) => {
+        performanceTracker.trackInteraction('focus', name)
+        // React Hook Form doesn't provide onFocus, handle manually
+      },
+      onBlur: (e: any) => {
+        // Track field validation
+        performanceTracker.startValidation(name)
+        
+        // Let react-hook-form handle validation
+        const hasError = !!errors[name]
+        performanceTracker.trackValidation(name, hasError)
+        
+        // Call original onBlur if it exists
+        register(name, validation).onBlur?.(e)
+      },
+      onChange: (e: any) => {
+        performanceTracker.trackInteraction('change', name)
+        register(name, validation).onChange?.(e)
+      }
+    }
+  }, [register, performanceTracker, errors])
+
   const fetchJobTasks = async () => {
     setLoading(true)
     try {
@@ -95,11 +141,9 @@ export default function JobTaskForm() {
       setJobTasks(data || [])
     } catch (error) {
       console.error('Error fetching job tasks:', error)
-      toast({
-        title: "Error",
-        description: "Failed to fetch job tasks",
-        variant: "destructive"
-      })
+      logUnmappedError(error, 'fetchJobTasks')
+      const errorInfo = handleFormError(error, 'job tasks', 'fetch')
+      toast(errorInfo)
     } finally {
       setLoading(false)
     }
@@ -172,16 +216,23 @@ export default function JobTaskForm() {
 
   const onSubmit = async (data: JobTaskFormData) => {
     setIsSubmitting(true)
+    performanceTracker.trackSubmissionStart()
+    
     try {
+      // Validate business logic
+      performanceTracker.startValidation('time_validation')
       if (data.start_time_minutes >= data.end_time_minutes) {
+        performanceTracker.trackValidation('time_validation', true, 'End time must be after start time')
         toast({
           title: "Error",
           description: "End time must be after start time",
           variant: "destructive"
         })
+        performanceTracker.trackSubmissionEnd(false)
         setIsSubmitting(false)
         return
       }
+      performanceTracker.trackValidation('time_validation', false)
 
       const formData = {
         instance_id: data.instance_id,
@@ -222,13 +273,13 @@ export default function JobTaskForm() {
       reset()
       setEditingId(null)
       fetchJobTasks()
+      performanceTracker.trackSubmissionEnd(true)
     } catch (error) {
       console.error('Error saving job task:', error)
-      toast({
-        title: "Error",
-        description: "Failed to save job task",
-        variant: "destructive"
-      })
+      logUnmappedError(error, 'saveJobTask')
+      performanceTracker.trackSubmissionEnd(false)
+      const errorInfo = handleFormError(error, 'job task', editingId ? 'update' : 'create')
+      toast(errorInfo)
     } finally {
       setIsSubmitting(false)
     }
@@ -264,11 +315,9 @@ export default function JobTaskForm() {
       fetchJobTasks()
     } catch (error) {
       console.error('Error deleting job task:', error)
-      toast({
-        title: "Error",
-        description: "Failed to delete job task",
-        variant: "destructive"
-      })
+      logUnmappedError(error, 'deleteJobTask')
+      const errorInfo = handleFormError(error, 'job task', 'delete')
+      toast(errorInfo)
     }
   }
 
@@ -293,8 +342,15 @@ export default function JobTaskForm() {
 
   return (
     <div className="space-y-6">
-      {/* Form Card */}
-      <Card>
+      <Tabs defaultValue="form" className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="form">Single Entry</TabsTrigger>
+          <TabsTrigger value="bulk">Mass Upload</TabsTrigger>
+        </TabsList>
+        
+        <TabsContent value="form" className="space-y-6">
+          {/* Form Card */}
+          <Card>
         <CardHeader>
           <CardTitle>{editingId ? 'Edit Job Task Assignment' : 'Create New Job Task Assignment'}</CardTitle>
           <CardDescription>
@@ -308,11 +364,17 @@ export default function JobTaskForm() {
               <div className="space-y-2">
                 <Label htmlFor="instance_id">Job Instance *</Label>
                 <Select onValueChange={(value) => {
+                  performanceTracker.startValidation('instance_id')
                   setValue('instance_id', value)
                   setValue('optimized_task_id', '')
                   setValue('selected_mode_id', '')
+                  performanceTracker.trackInteraction('click', 'instance_id')
+                  performanceTracker.trackValidation('instance_id', !value)
                 }}>
-                  <SelectTrigger>
+                  <SelectTrigger
+                    onFocus={() => performanceTracker.trackInteraction('focus', 'instance_id')}
+                    onClick={() => performanceTracker.trackInteraction('click', 'instance_id')}
+                  >
                     <SelectValue placeholder="Select job instance" />
                   </SelectTrigger>
                   <SelectContent>
@@ -331,12 +393,18 @@ export default function JobTaskForm() {
                 <Label htmlFor="optimized_task_id">Optimized Task *</Label>
                 <Select 
                   onValueChange={(value) => {
+                    performanceTracker.startValidation('optimized_task_id')
                     setValue('optimized_task_id', value)
                     setValue('selected_mode_id', '')
+                    performanceTracker.trackInteraction('click', 'optimized_task_id')
+                    performanceTracker.trackValidation('optimized_task_id', !value)
                   }}
                   disabled={!selectedInstanceId}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger
+                    onFocus={() => performanceTracker.trackInteraction('focus', 'optimized_task_id')}
+                    onClick={() => performanceTracker.trackInteraction('click', 'optimized_task_id')}
+                  >
                     <SelectValue placeholder="Select optimized task" />
                   </SelectTrigger>
                   <SelectContent>
@@ -397,7 +465,7 @@ export default function JobTaskForm() {
                   id="start_time_minutes"
                   type="number"
                   min="0"
-                  {...register('start_time_minutes', { 
+                  {...registerWithPerformance('start_time_minutes', { 
                     valueAsNumber: true,
                     min: { value: 0, message: 'Start time must be non-negative' }
                   })}
@@ -413,7 +481,7 @@ export default function JobTaskForm() {
                   id="end_time_minutes"
                   type="number"
                   min="0"
-                  {...register('end_time_minutes', { 
+                  {...registerWithPerformance('end_time_minutes', { 
                     valueAsNumber: true,
                     min: { value: 0, message: 'End time must be non-negative' }
                   })}
@@ -429,7 +497,7 @@ export default function JobTaskForm() {
                   id="actual_duration_minutes"
                   type="number"
                   min="0"
-                  {...register('actual_duration_minutes', { 
+                  {...registerWithPerformance('actual_duration_minutes', { 
                     valueAsNumber: true,
                     min: { value: 0, message: 'Duration must be non-negative' }
                   })}
@@ -445,7 +513,7 @@ export default function JobTaskForm() {
                   id="setup_time_minutes"
                   type="number"
                   min="0"
-                  {...register('setup_time_minutes', { 
+                  {...registerWithPerformance('setup_time_minutes', { 
                     valueAsNumber: true,
                     min: { value: 0, message: 'Setup time must be non-negative' }
                   })}
@@ -458,11 +526,22 @@ export default function JobTaskForm() {
             {/* Action Buttons */}
             <div className="flex justify-end space-x-2 pt-4">
               {editingId && (
-                <Button type="button" variant="outline" onClick={handleCancel}>
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={() => {
+                    performanceTracker.trackInteraction('click', 'cancel_button')
+                    handleCancel()
+                  }}
+                >
                   Cancel
                 </Button>
               )}
-              <Button type="submit" disabled={isSubmitting || !watch('instance_id') || !watch('optimized_task_id')}>
+              <Button 
+                type="submit" 
+                disabled={isSubmitting || !watch('instance_id') || !watch('optimized_task_id')}
+                onClick={() => performanceTracker.trackInteraction('click', 'submit_button')}
+              >
                 {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 {editingId ? 'Update' : 'Create'} Job Task
               </Button>
@@ -559,6 +638,34 @@ export default function JobTaskForm() {
           )}
         </CardContent>
       </Card>
+        </TabsContent>
+
+        <TabsContent value="bulk" className="space-y-6">
+          <MassUploader
+            tableName="instance_task_assignments"
+            entityName="Job Task"
+            sampleData={sampleJobTaskData}
+            onUploadComplete={fetchJobTasks}
+            requiredFields={['instance_id', 'optimized_task_id']}
+            fieldDescriptions={{
+              instance_id: 'Job instance ID (required)',
+              optimized_task_id: 'Optimized task ID (required)',
+              selected_mode_id: 'Task execution mode ID',
+              assigned_machine_id: 'Machine resource ID for task execution',
+              start_time_minutes: 'Task start time in minutes from schedule start',
+              end_time_minutes: 'Task completion time in minutes from schedule start',
+              actual_duration_minutes: 'Actual time taken to complete task',
+              setup_time_minutes: 'Time required for task setup and preparation'
+            }}
+          />
+        </TabsContent>
+      </Tabs>
+
+      {/* Performance Debug Panel (Development Only) */}
+      <PerformanceDebugPanel 
+        formName="Job Task Form"
+        metrics={performanceTracker}
+      />
     </div>
   )
 }

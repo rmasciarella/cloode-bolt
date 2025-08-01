@@ -8,7 +8,10 @@ type DepartmentUpdate = Database['public']['Tables']['departments']['Update']
 export class DepartmentService extends BaseService {
   async getAll(activeOnly: boolean = false): Promise<ServiceResponse<Department[]>> {
     try {
-      let query = this.supabase
+      // Use auth-aware client with fallback to anonymous access
+      const client = await this.getClient({ fallbackToAnon: true })
+      
+      let query = client
         .from('departments')
         .select('*')
         .order('name', { ascending: true })
@@ -20,12 +23,12 @@ export class DepartmentService extends BaseService {
       const { data, error } = await query
 
       if (error) {
-        return this.createResponse(null, this.handleError(error))
+        return this.createResponseSync(null, this.handleError(error))
       }
 
-      return this.createResponse(data || [])
+      return this.createResponseSync(data || [])
     } catch (error) {
-      return this.createResponse(null, this.handleError(error))
+      return this.createResponseSync(null, this.handleError(error))
     }
   }
 

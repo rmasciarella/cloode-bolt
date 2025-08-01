@@ -10,7 +10,9 @@ import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Loader2, Edit, Trash2 } from 'lucide-react'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { MassUploader } from '@/components/ui/mass-uploader'
+import { Loader2, Edit, Trash2, Upload } from 'lucide-react'
 
 type TemplatePrecedence = {
   optimized_precedence_id: string
@@ -274,10 +276,28 @@ export default function TemplatePrecedenceForm() {
   const selectedPatternId = watch('pattern_id')
   const selectedPredecessorId = watch('predecessor_optimized_task_id')
 
+  const sampleTemplatePrecedenceData = {
+    pattern_id: 'PATTERN_001',
+    predecessor_optimized_task_id: 'TASK_001',
+    successor_optimized_task_id: 'TASK_002',
+    min_delay_minutes: 0,
+    max_delay_minutes: 120,
+    requires_department_transfer: false,
+    transfer_time_minutes: 0,
+    is_mandatory: true
+  }
+
   return (
     <div className="space-y-6">
-      {/* Form Card */}
-      <Card>
+      <Tabs defaultValue="form" className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="form">Single Entry</TabsTrigger>
+          <TabsTrigger value="bulk">Mass Upload</TabsTrigger>
+        </TabsList>
+        
+        <TabsContent value="form" className="space-y-6">
+          {/* Form Card */}
+          <Card>
         <CardHeader>
           <CardTitle>{editingId ? 'Edit Template Precedence' : 'Create New Template Precedence'}</CardTitle>
           <CardDescription>
@@ -429,6 +449,28 @@ export default function TemplatePrecedenceForm() {
           </form>
         </CardContent>
       </Card>
+        </TabsContent>
+        
+        <TabsContent value="bulk" className="space-y-6">
+          <MassUploader
+            tableName="optimized_precedences"
+            entityName="Template Precedence"
+            sampleData={sampleTemplatePrecedenceData}
+            onUploadComplete={fetchTemplatePrecedences}
+            requiredFields={['pattern_id', 'predecessor_optimized_task_id', 'successor_optimized_task_id']}
+            fieldDescriptions={{
+              pattern_id: 'Job optimized pattern ID (required)',
+              predecessor_optimized_task_id: 'Task that must complete first (required)',
+              successor_optimized_task_id: 'Task that follows the predecessor (required)',
+              min_delay_minutes: 'Minimum time delay between tasks in minutes (default: 0)',
+              max_delay_minutes: 'Maximum time delay between tasks in minutes (0 = no limit)',
+              requires_department_transfer: 'Whether tasks require department transfer (true/false)',
+              transfer_time_minutes: 'Time required for material transfer between departments (default: 0)',
+              is_mandatory: 'Whether this precedence constraint is mandatory (true/false)'
+            }}
+          />
+        </TabsContent>
+      </Tabs>
 
       {/* Template Precedences List */}
       <Card>

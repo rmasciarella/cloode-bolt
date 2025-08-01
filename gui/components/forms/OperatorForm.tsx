@@ -4,13 +4,16 @@ import { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/hooks/use-toast'
+import { useFormPerformanceMonitoring } from '@/lib/hooks/use-form-performance'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Loader2, Edit, Trash2 } from 'lucide-react'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { MassUploader } from '@/components/ui/mass-uploader'
+import { Loader2, Edit, Trash2, Upload } from 'lucide-react'
 
 type Operator = {
   operator_id: string
@@ -66,6 +69,19 @@ export default function OperatorForm() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const { toast } = useToast()
 
+  // Performance monitoring
+  const {
+    trackInteraction,
+    trackValidation,
+    startValidation,
+    trackSubmissionStart,
+    trackSubmissionEnd,
+    isSlowLoading,
+    isSlowSubmission,
+    hasHighErrorRate,
+    getFormSummary
+  } = useFormPerformanceMonitoring('OperatorForm')
+
   const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<OperatorFormData>({
     defaultValues: {
       name: '',
@@ -83,6 +99,31 @@ export default function OperatorForm() {
       is_active: true
     }
   })
+
+  // Enhanced register function with performance tracking
+  const registerWithPerformance = (name: keyof OperatorFormData, options?: any) => {
+    const fieldRegistration = register(name, options)
+    
+    return {
+      ...fieldRegistration,
+      onFocus: (e: React.FocusEvent<HTMLInputElement>) => {
+        trackInteraction('focus', name)
+        startValidation(name)
+        // fieldRegistration.onFocus is not available on UseFormRegisterReturn
+      },
+      onBlur: (e: React.FocusEvent<HTMLInputElement>) => {
+        trackInteraction('blur', name)
+        const hasError = !!errors[name]
+        const errorMessage = errors[name]?.message
+        trackValidation(name, hasError, errorMessage)
+        fieldRegistration.onBlur?.(e)
+      },
+      onChange: (e: React.ChangeEvent<HTMLInputElement>) => {
+        trackInteraction('change', name)
+        fieldRegistration.onChange(e)
+      }
+    }
+  }
 
   const fetchOperators = async () => {
     setLoading(true)
@@ -124,10 +165,12 @@ export default function OperatorForm() {
   useEffect(() => {
     fetchOperators()
     fetchDepartments()
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [fetchOperators, fetchDepartments])
 
   const onSubmit = async (data: OperatorFormData) => {
     setIsSubmitting(true)
+    trackSubmissionStart()
+    
     try {
       const formData = {
         name: data.name,
@@ -173,6 +216,7 @@ export default function OperatorForm() {
       reset()
       setEditingId(null)
       fetchOperators()
+      trackSubmissionEnd(true)
     } catch (error) {
       console.error('Error saving operator:', error)
       toast({
@@ -180,6 +224,7 @@ export default function OperatorForm() {
         description: "Failed to save operator",
         variant: "destructive"
       })
+      trackSubmissionEnd(false)
     } finally {
       setIsSubmitting(false)
     }
@@ -232,10 +277,56 @@ export default function OperatorForm() {
     setEditingId(null)
   }
 
+  const sampleOperatorData = {
+    name: 'John Smith',
+    employee_number: 'EMP001',
+    department_id: null,
+    hourly_rate: 25.50,
+    max_hours_per_day: 8,
+    max_hours_per_week: 40,
+    overtime_rate_multiplier: 1.5,
+    employment_status: 'FULL_TIME',
+    efficiency_rating: 0.95,
+    quality_score: 0.92,
+    safety_score: 0.98,
+    is_active: true
+  }
+
+  // Performance monitoring summary for development
+  const performanceSummary = getFormSummary()
+  const showPerformanceInfo = process.env.NODE_ENV === 'development'
+
   return (
     <div className="space-y-6">
-      {/* Form Card */}
-      <Card>
+      {/* Performance Monitoring Summary - Development Only */}
+      {showPerformanceInfo && performanceSummary && (
+        <Card className="border-yellow-200 bg-yellow-50">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-yellow-800">Performance Monitoring</CardTitle>
+          </CardHeader>
+          <CardContent className="text-xs space-y-1">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              <div>Load Time: <span className={isSlowLoading ? 'text-red-600 font-semibold' : ''}>{performanceSummary.averageLoadTime}ms</span></div>
+              <div>Avg Submission: <span className={isSlowSubmission ? 'text-red-600 font-semibold' : ''}>{performanceSummary.averageSubmissionTime}ms</span></div>
+              <div>Error Rate: <span className={hasHighErrorRate ? 'text-red-600 font-semibold' : ''}>{performanceSummary.errorRate.toFixed(2)}</span></div>
+              <div>Sessions: {performanceSummary.totalSessions}</div>
+            </div>
+            {(isSlowLoading || isSlowSubmission || hasHighErrorRate) && (
+              <p className="text-red-600 font-medium mt-2">Performance issues detected - check console for details</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+      
+      <Tabs defaultValue="form" className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="form">Single Entry</TabsTrigger>
+          <TabsTrigger value="bulk">Mass Upload</TabsTrigger>
+        </TabsList>
+        
+        <TabsContent value="form" className="space-y-6">
+          {/* Form Card */}
+          <Card>
         <CardHeader>
           <CardTitle>{editingId ? 'Edit Operator' : 'Create New Operator'}</CardTitle>
           <CardDescription>
@@ -250,7 +341,7 @@ export default function OperatorForm() {
                 <Label htmlFor="name">Operator Name *</Label>
                 <Input
                   id="name"
-                  {...register('name', { 
+                  {...registerWithPerformance('name', { 
                     required: 'Operator name is required',
                     maxLength: { value: 255, message: 'Name must be 255 characters or less' }
                   })}
@@ -264,7 +355,7 @@ export default function OperatorForm() {
                 <Label htmlFor="employee_number">Employee Number</Label>
                 <Input
                   id="employee_number"
-                  {...register('employee_number')}
+                  {...registerWithPerformance('employee_number')}
                   placeholder="e.g., EMP-001"
                 />
               </div>
@@ -272,8 +363,11 @@ export default function OperatorForm() {
               {/* Department */}
               <div className="space-y-2">
                 <Label htmlFor="department_id">Department</Label>
-                <Select onValueChange={(value) => setValue('department_id', value)}>
-                  <SelectTrigger>
+                <Select onValueChange={(value) => {
+                  trackInteraction('change', 'department_id')
+                  setValue('department_id', value)
+                }}>
+                  <SelectTrigger onClick={() => trackInteraction('click', 'department_id')}>
                     <SelectValue placeholder="Select department" />
                   </SelectTrigger>
                   <SelectContent>
@@ -290,8 +384,11 @@ export default function OperatorForm() {
               {/* Employment Status */}
               <div className="space-y-2">
                 <Label htmlFor="employment_status">Employment Status</Label>
-                <Select onValueChange={(value) => setValue('employment_status', value)}>
-                  <SelectTrigger>
+                <Select onValueChange={(value) => {
+                  trackInteraction('change', 'employment_status')
+                  setValue('employment_status', value)
+                }}>
+                  <SelectTrigger onClick={() => trackInteraction('click', 'employment_status')}>
                     <SelectValue placeholder="Select status" />
                   </SelectTrigger>
                   <SelectContent>
@@ -312,7 +409,7 @@ export default function OperatorForm() {
                   type="number"
                   min="0"
                   step="0.01"
-                  {...register('hourly_rate', { 
+                  {...registerWithPerformance('hourly_rate', { 
                     valueAsNumber: true,
                     min: { value: 0, message: 'Rate must be non-negative' }
                   })}
@@ -328,7 +425,7 @@ export default function OperatorForm() {
                   type="number"
                   min="1"
                   max="24"
-                  {...register('max_hours_per_day', { 
+                  {...registerWithPerformance('max_hours_per_day', { 
                     valueAsNumber: true,
                     min: { value: 1, message: 'Must be at least 1 hour' },
                     max: { value: 24, message: 'Cannot exceed 24 hours' }
@@ -345,7 +442,7 @@ export default function OperatorForm() {
                   type="number"
                   min="1"
                   max="168"
-                  {...register('max_hours_per_week', { 
+                  {...registerWithPerformance('max_hours_per_week', { 
                     valueAsNumber: true,
                     min: { value: 1, message: 'Must be at least 1 hour' },
                     max: { value: 168, message: 'Cannot exceed 168 hours per week' }
@@ -362,7 +459,7 @@ export default function OperatorForm() {
                   type="number"
                   min="1"
                   step="0.1"
-                  {...register('overtime_rate_multiplier', { 
+                  {...registerWithPerformance('overtime_rate_multiplier', { 
                     valueAsNumber: true,
                     min: { value: 1, message: 'Multiplier must be at least 1.0' }
                   })}
@@ -378,7 +475,7 @@ export default function OperatorForm() {
                   type="number"
                   min="0"
                   step="0.01"
-                  {...register('efficiency_rating', { 
+                  {...registerWithPerformance('efficiency_rating', { 
                     valueAsNumber: true,
                     min: { value: 0, message: 'Rating must be non-negative' }
                   })}
@@ -395,7 +492,7 @@ export default function OperatorForm() {
                   type="number"
                   min="0"
                   step="0.01"
-                  {...register('quality_score', { 
+                  {...registerWithPerformance('quality_score', { 
                     valueAsNumber: true,
                     min: { value: 0, message: 'Score must be non-negative' }
                   })}
@@ -412,7 +509,7 @@ export default function OperatorForm() {
                   type="number"
                   min="0"
                   step="0.01"
-                  {...register('safety_score', { 
+                  {...registerWithPerformance('safety_score', { 
                     valueAsNumber: true,
                     min: { value: 0, message: 'Score must be non-negative' }
                   })}
@@ -427,7 +524,7 @@ export default function OperatorForm() {
                 <Input
                   id="hire_date"
                   type="date"
-                  {...register('hire_date')}
+                  {...registerWithPerformance('hire_date')}
                 />
               </div>
             </div>
@@ -437,7 +534,10 @@ export default function OperatorForm() {
               <Checkbox
                 id="is_active"
                 checked={watch('is_active')}
-                onCheckedChange={(checked) => setValue('is_active', checked as boolean)}
+                onCheckedChange={(checked) => {
+                  trackInteraction('change', 'is_active')
+                  setValue('is_active', checked as boolean)
+                }}
               />
               <Label htmlFor="is_active">Active</Label>
             </div>
@@ -445,11 +545,14 @@ export default function OperatorForm() {
             {/* Action Buttons */}
             <div className="flex justify-end space-x-2 pt-4">
               {editingId && (
-                <Button type="button" variant="outline" onClick={handleCancel}>
+                <Button type="button" variant="outline" onClick={() => {
+                  trackInteraction('click', 'cancel-button')
+                  handleCancel()
+                }}>
                   Cancel
                 </Button>
               )}
-              <Button type="submit" disabled={isSubmitting}>
+              <Button type="submit" disabled={isSubmitting} onClick={() => trackInteraction('click', 'submit-button')}>
                 {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 {editingId ? 'Update' : 'Create'} Operator
               </Button>
@@ -457,6 +560,27 @@ export default function OperatorForm() {
           </form>
         </CardContent>
       </Card>
+        </TabsContent>
+        
+        <TabsContent value="bulk" className="space-y-6">
+          <MassUploader
+            tableName="operators"
+            entityName="Operator"
+            sampleData={sampleOperatorData}
+            onUploadComplete={fetchOperators}
+            requiredFields={['name', 'hourly_rate', 'employment_status']}
+            fieldDescriptions={{
+              name: 'Operator full name',
+              employee_number: 'Unique employee identifier',
+              hourly_rate: 'Base hourly wage rate',
+              employment_status: 'FULL_TIME, PART_TIME, CONTRACT, TEMPORARY',
+              efficiency_rating: 'Performance rating (0.0 to 1.0)',
+              quality_score: 'Quality rating (0.0 to 1.0)',
+              safety_score: 'Safety rating (0.0 to 1.0)'
+            }}
+          />
+        </TabsContent>
+      </Tabs>
 
       {/* Operators List */}
       <Card>
@@ -533,14 +657,20 @@ export default function OperatorForm() {
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => handleEdit(operator)}
+                              onClick={() => {
+                                trackInteraction('click', 'edit-operator')
+                                handleEdit(operator)
+                              }}
                             >
                               <Edit className="h-4 w-4" />
                             </Button>
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => handleDelete(operator.operator_id)}
+                              onClick={() => {
+                                trackInteraction('click', 'delete-operator')
+                                handleDelete(operator.operator_id)
+                              }}
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>

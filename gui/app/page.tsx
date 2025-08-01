@@ -1,8 +1,12 @@
 "use client"
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
-import { Building2, Factory, Users, Calendar, BookTemplate as FileTemplate, Network, Cog, Settings, Clock, Wrench, BriefcaseIcon, ListTodo, Menu, X } from 'lucide-react'
+import { Building2, Factory, Users, Calendar, BookTemplate as FileTemplate, Network, Cog, Settings, Clock, Wrench, BriefcaseIcon, ListTodo, Menu, X, Activity, LogOut, Shield } from 'lucide-react'
+import { usePerformanceMonitoring } from '@/lib/hooks/use-performance-monitoring'
+import { AuthGuard } from '@/components/auth/AuthGuard'
+import { useAuth } from '@/components/auth/AuthProvider'
+import { Button } from '@/components/ui/button'
 import DepartmentForm from '@/components/forms/DepartmentForm'
 import JobTemplateForm from '@/components/forms/JobTemplateForm'
 import MachineForm from '@/components/forms/MachineForm'
@@ -65,7 +69,7 @@ const navigationSections = [
   },
 ]
 
-export default function Home() {
+function HomeContent() {
   const [activeSection, setActiveSection] = useState('departments')
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     'Organization': true,
@@ -75,6 +79,21 @@ export default function Home() {
     'Jobs': false,
   })
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  
+  // Authentication
+  const { user, signOut } = useAuth()
+  
+  // Performance monitoring
+  const { trackPageView, trackUserAction, getMetrics, isEnabled } = usePerformanceMonitoring()
+  const [showMetrics, setShowMetrics] = useState(false)
+  
+  useEffect(() => {
+    trackPageView('Home')
+  }, [])
+  
+  useEffect(() => {
+    trackUserAction('navigation', `navigated_to_${activeSection}`)
+  }, [activeSection])
 
   const toggleSection = (title: string) => {
     setExpandedSections(prev => ({
@@ -211,7 +230,49 @@ export default function Home() {
           </nav>
 
           {/* Footer */}
-          <div className="p-6 border-t border-gray-200">
+          <div className="p-6 border-t border-gray-200 space-y-3">
+            {/* Auth Status */}
+            {user && (
+              <div className="flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2 text-green-600">
+                  <Shield className="h-3 w-3" />
+                  <span>{user.email || 'dev@localhost'}</span>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={signOut}
+                  className="h-6 px-2 text-xs"
+                >
+                  <LogOut className="h-3 w-3" />
+                </Button>
+              </div>
+            )}
+            
+            {process.env.NODE_ENV === 'development' && process.env.NEXT_PUBLIC_DISABLE_AUTH === 'true' && (
+              <div className="text-xs text-yellow-600 bg-yellow-50 p-2 rounded">
+                Development Mode: Authentication Disabled
+              </div>
+            )}
+            
+            {isEnabled && (
+              <button
+                onClick={() => setShowMetrics(!showMetrics)}
+                className="flex items-center gap-2 text-xs text-blue-600 hover:text-blue-800 transition-colors"
+              >
+                <Activity className="h-3 w-3" />
+                {showMetrics ? 'Hide' : 'Show'} Performance
+              </button>
+            )}
+            
+            {showMetrics && isEnabled && (
+              <div className="text-xs text-gray-600 bg-gray-50 p-2 rounded space-y-1">
+                <div>Pages: {Object.keys(getMetrics().pages).length}</div>
+                <div>Actions: {getMetrics().actions.length}</div>
+                <div>Session: {Math.round(getMetrics().sessionDuration / 1000)}s</div>
+              </div>
+            )}
+            
             <div className="text-xs text-gray-500">
               <p>Version 1.0.0</p>
               <p>Manufacturing Scheduling</p>
@@ -239,5 +300,13 @@ export default function Home() {
         </main>
       </div>
     </div>
+  )
+}
+
+export default function Home() {
+  return (
+    <AuthGuard>
+      <HomeContent />
+    </AuthGuard>
   )
 }

@@ -176,7 +176,7 @@ export class HookableBaseService {
         const shouldCache = await serviceRegistry.execute('shouldCache', table, operation)
         
         if (shouldCache) {
-          const cached = await serviceRegistry.getFromCache<T>(cacheKey)
+          const cached = await serviceRegistry.getFromCache(cacheKey) as T
           if (cached) {
             return { data: cached, error: null, success: true }
           }

@@ -1,16 +1,20 @@
 "use client"
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useForm } from 'react-hook-form'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/hooks/use-toast'
+import { usePerformanceMonitor, performanceUtils } from '@/hooks/use-performance-monitor'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Loader2, Edit, Trash2 } from 'lucide-react'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { MassUploader } from '@/components/ui/mass-uploader'
+import { PerformanceDashboard } from '@/components/ui/performance-dashboard'
+import { Loader2, Edit, Trash2, Upload } from 'lucide-react'
 
 type SetupTime = {
   setup_time_id: string
@@ -87,6 +91,7 @@ export default function SetupTimeForm() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const { toast } = useToast()
+  const monitor = usePerformanceMonitor('SetupTimeForm')
 
   const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<SetupTimeFormData>({
     defaultValues: {
@@ -106,18 +111,68 @@ export default function SetupTimeForm() {
     }
   })
 
+  // Performance monitoring for field validation
+  const validateField = useCallback((fieldName: string, value: any) => {
+    const startTime = performance.now()
+    let isValid = true
+    let error = ''
+
+    try {
+      switch (fieldName) {
+        case 'setup_time_minutes':
+          isValid = value >= 0
+          error = isValid ? '' : 'Setup time must be non-negative'
+          break
+        case 'setup_cost':
+          isValid = value >= 0
+          error = isValid ? '' : 'Cost must be non-negative'
+          break
+        case 'efficiency_impact_percent':
+          isValid = value >= 0 && value <= 100
+          error = isValid ? '' : 'Impact must be between 0 and 100%'
+          break
+        default:
+          isValid = true
+      }
+    } catch (err) {
+      isValid = false
+      error = String(err)
+    }
+
+    const duration = performance.now() - startTime
+    monitor.recordValidation(fieldName, duration, isValid, error)
+    
+    return { isValid, error }
+  }, [monitor])
+
   const fetchSetupTimes = async () => {
     setLoading(true)
+    monitor.startTimer('fetch_setup_times')
+    
     try {
-      const { data, error } = await supabase
-        .from('optimized_task_setup_times')
-        .select(`*`)
-        .limit(10)
+      const { result } = await performanceUtils.measureAsync(
+        async () => {
+          const { data, error } = await supabase
+            .from('optimized_task_setup_times')
+            .select(`*`)
+            .limit(10)
 
-      if (error) throw error
-      setSetupTimes(data || [])
+          if (error) throw error
+          return data || []
+        },
+        'SetupTimeForm',
+        'supabase_fetch_setup_times',
+        { table: 'optimized_task_setup_times', limit: 10 }
+      )
+      
+      setSetupTimes(result)
+      monitor.endTimer('fetch_setup_times', 'fetch_setup_times_complete', true)
     } catch (error) {
+      const errorMsg = String(error)
       console.error('Error fetching setup times:', error)
+      monitor.endTimer('fetch_setup_times', 'fetch_setup_times_error', false, errorMsg)
+      monitor.recordError(errorMsg, 'fetch_setup_times')
+      
       toast({
         title: "Error",
         description: "Failed to fetch setup times",
@@ -130,56 +185,104 @@ export default function SetupTimeForm() {
 
   const fetchTemplateTasks = async () => {
     try {
-      const { data, error } = await supabase
-        .from('optimized_tasks')
-        .select(`
-          optimized_task_id,
-          name,
-          pattern_id,
-          job_optimized_patterns!inner(name)
-        `)
-        .order('name', { ascending: true })
+      const { result } = await performanceUtils.measureAsync(
+        async () => {
+          const { data, error } = await supabase
+            .from('optimized_tasks')
+            .select(`
+              optimized_task_id,
+              name,
+              pattern_id,
+              job_optimized_patterns!inner(name)
+            `)
+            .order('name', { ascending: true })
 
-      if (error) throw error
+          if (error) throw error
+          
+          const formattedTasks = data?.map(task => ({
+            optimized_task_id: task.optimized_task_id,
+            name: task.name,
+            pattern_id: task.pattern_id,
+            pattern_name: (task.job_optimized_patterns as any)?.name || 'Unknown Pattern'
+          })) || []
+          
+          return formattedTasks
+        },
+        'SetupTimeForm',
+        'supabase_fetch_template_tasks',
+        { table: 'optimized_tasks', orderBy: 'name' }
+      )
       
-      const formattedTasks = data?.map(task => ({
-        optimized_task_id: task.optimized_task_id,
-        name: task.name,
-        pattern_id: task.pattern_id,
-        pattern_name: (task.job_optimized_patterns as any)?.name || 'Unknown Pattern'
-      })) || []
-      
-      setTemplateTasks(formattedTasks)
+      setTemplateTasks(result)
     } catch (error) {
+      const errorMsg = String(error)
       console.error('Error fetching template tasks:', error)
+      monitor.recordError(errorMsg, 'fetch_template_tasks')
     }
   }
 
   const fetchMachines = async () => {
     try {
-      const { data, error } = await supabase
-        .from('machines')
-        .select('machine_resource_id, name')
-        .eq('is_active', true)
-        .order('name', { ascending: true })
+      const { result } = await performanceUtils.measureAsync(
+        async () => {
+          const { data, error } = await supabase
+            .from('machines')
+            .select('machine_resource_id, name')
+            .eq('is_active', true)
+            .order('name', { ascending: true })
 
-      if (error) throw error
-      setMachines(data || [])
+          if (error) throw error
+          return data || []
+        },
+        'SetupTimeForm',
+        'supabase_fetch_machines',
+        { table: 'machines', filter: 'is_active=true' }
+      )
+      
+      setMachines(result)
     } catch (error) {
+      const errorMsg = String(error)
       console.error('Error fetching machines:', error)
+      monitor.recordError(errorMsg, 'fetch_machines')
     }
   }
 
   useEffect(() => {
-    fetchSetupTimes()
-    fetchTemplateTasks()
-    fetchMachines()
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+    const loadFormData = async () => {
+      monitor.startTimer('form_load')
+      
+      try {
+        await Promise.all([
+          fetchSetupTimes(),
+          fetchTemplateTasks(),
+          fetchMachines()
+        ])
+        
+        const loadDuration = monitor.endTimer('form_load', 'form_initial_load', true)
+        monitor.recordFormLoad(loadDuration)
+      } catch (error) {
+        const errorMsg = String(error)
+        monitor.endTimer('form_load', 'form_initial_load', false, errorMsg)
+        monitor.recordError(errorMsg, 'form_initial_load')
+      }
+    }
+    
+    loadFormData()
+  }, [monitor]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const onSubmit = async (data: SetupTimeFormData) => {
     setIsSubmitting(true)
+    monitor.startTimer('form_submission')
+    
     try {
+      // Client-side validation with performance tracking
+      const validationStart = performance.now()
+      
       if (data.from_optimized_task_id === data.to_optimized_task_id) {
+        const validationDuration = performance.now() - validationStart
+        monitor.recordValidation('task_ids_different', validationDuration, false, 'From and To tasks must be different')
+        monitor.endTimer('form_submission', 'form_submission_validation_error', false, 'From and To tasks must be different')
+        
         toast({
           title: "Error",
           description: "From and To tasks must be different",
@@ -188,6 +291,9 @@ export default function SetupTimeForm() {
         setIsSubmitting(false)
         return
       }
+      
+      const validationDuration = performance.now() - validationStart
+      monitor.recordValidation('form_validation', validationDuration, true)
 
       const formData = {
         from_optimized_task_id: data.from_optimized_task_id,
@@ -205,36 +311,61 @@ export default function SetupTimeForm() {
         product_family_to: data.product_family_to || null,
       }
 
-      if (editingId) {
-        const { error } = await supabase
-          .from('optimized_task_setup_times')
-          .update(formData)
-          .eq('setup_time_id', editingId)
+      const { duration } = await performanceUtils.measureAsync(
+        async () => {
+          if (editingId) {
+            const { error } = await supabase
+              .from('optimized_task_setup_times')
+              .update(formData)
+              .eq('setup_time_id', editingId)
 
-        if (error) throw error
+            if (error) throw error
+            
+            return 'update'
+          } else {
+            const { error } = await supabase
+              .from('optimized_task_setup_times')
+              .insert([formData])
 
-        toast({
-          title: "Success",
-          description: "Task mode updated successfully"
-        })
-      } else {
-        const { error } = await supabase
-          .from('optimized_task_setup_times')
-          .insert([formData])
+            if (error) throw error
+            
+            return 'insert'
+          }
+        },
+        'SetupTimeForm',
+        editingId ? 'supabase_update_setup_time' : 'supabase_insert_setup_time',
+        { 
+          editing: !!editingId,
+          setup_time_minutes: data.setup_time_minutes,
+          setup_type: data.setup_type,
+          complexity_level: data.complexity_level
+        }
+      )
 
-        if (error) throw error
+      const totalDuration = monitor.endTimer('form_submission', 'form_submission_success', true)
+      monitor.recordSubmission(totalDuration, true, undefined, {
+        operation: editingId ? 'update' : 'create',
+        database_duration: duration,
+        total_duration: totalDuration
+      })
 
-        toast({
-          title: "Success",
-          description: "Task mode created successfully"
-        })
-      }
+      toast({
+        title: "Success",
+        description: editingId ? "Setup time updated successfully" : "Setup time created successfully"
+      })
 
       reset()
       setEditingId(null)
       fetchSetupTimes()
     } catch (error) {
+      const errorMsg = String(error)
       console.error('Error saving setup time:', error)
+      
+      const totalDuration = monitor.endTimer('form_submission', 'form_submission_error', false, errorMsg)
+      monitor.recordSubmission(totalDuration, false, errorMsg, {
+        operation: editingId ? 'update' : 'create'
+      })
+      
       toast({
         title: "Error",
         description: "Failed to save setup time",
@@ -246,6 +377,9 @@ export default function SetupTimeForm() {
   }
 
   const handleEdit = (setupTime: SetupTime) => {
+    monitor.recordInteraction('edit_button_click', undefined, { setup_time_id: setupTime.setup_time_id })
+    
+    monitor.startTimer('populate_form')
     setEditingId(setupTime.setup_time_id)
     setValue('from_optimized_task_id', setupTime.from_optimized_task_id)
     setValue('to_optimized_task_id', setupTime.to_optimized_task_id)
@@ -255,43 +389,99 @@ export default function SetupTimeForm() {
     setValue('complexity_level', setupTime.complexity_level)
     setValue('requires_certification', setupTime.requires_certification)
     setValue('setup_cost', setupTime.setup_cost)
+    monitor.endTimer('populate_form', 'populate_form_for_edit', true)
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this task mode?')) return
+    monitor.recordInteraction('delete_button_click', undefined, { setup_time_id: id })
+    
+    if (!confirm('Are you sure you want to delete this setup time?')) {
+      monitor.recordInteraction('delete_cancelled')
+      return
+    }
+    
+    monitor.recordInteraction('delete_confirmed')
+    monitor.startTimer('delete_operation')
 
     try {
-      const { error } = await supabase
-        .from('optimized_task_setup_times')
-        .delete()
-        .eq('setup_time_id', id)
+      const { duration } = await performanceUtils.measureAsync(
+        async () => {
+          const { error } = await supabase
+            .from('optimized_task_setup_times')
+            .delete()
+            .eq('setup_time_id', id)
 
-      if (error) throw error
+          if (error) throw error
+        },
+        'SetupTimeForm',
+        'supabase_delete_setup_time',
+        { setup_time_id: id }
+      )
+
+      monitor.endTimer('delete_operation', 'delete_operation_success', true)
 
       toast({
         title: "Success",
-        description: "Task mode deleted successfully"
+        description: "Setup time deleted successfully"
       })
       fetchSetupTimes()
     } catch (error) {
-      console.error('Error deleting task mode:', error)
+      const errorMsg = String(error)
+      console.error('Error deleting setup time:', error)
+      monitor.endTimer('delete_operation', 'delete_operation_error', false, errorMsg)
+      monitor.recordError(errorMsg, 'delete_setup_time')
+      
       toast({
         title: "Error",
-        description: "Failed to delete task mode",
+        description: "Failed to delete setup time",
         variant: "destructive"
       })
     }
   }
 
   const handleCancel = () => {
+    monitor.recordInteraction('cancel_button_click')
     reset()
     setEditingId(null)
   }
 
+  // Field interaction handlers with performance monitoring
+  const handleFieldFocus = useCallback((fieldId: string) => {
+    monitor.recordInteraction('focus', fieldId)
+  }, [monitor])
+
+  const handleFieldBlur = useCallback((fieldId: string, value: any) => {
+    monitor.recordInteraction('blur', fieldId)
+    validateField(fieldId, value)
+  }, [monitor, validateField])
+
+  const handleFieldChange = useCallback((fieldId: string, value: any) => {
+    monitor.recordInteraction('change', fieldId, { value: typeof value === 'string' ? value.length : value })
+    validateField(fieldId, value)
+  }, [monitor, validateField])
+
+  const sampleSetupTimeData = {
+    from_optimized_task_id: '',
+    to_optimized_task_id: '',
+    machine_resource_id: '',
+    setup_time_minutes: 30,
+    teardown_time_minutes: 15,
+    changeover_cost: 25.0,
+    complexity_factor: 1.2,
+    is_active: true
+  }
+
   return (
     <div className="space-y-6">
-      {/* Form Card */}
-      <Card>
+      <Tabs defaultValue="form" className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="form">Single Entry</TabsTrigger>
+          <TabsTrigger value="bulk">Mass Upload</TabsTrigger>
+        </TabsList>
+        
+        <TabsContent value="form" className="space-y-6">
+          {/* Form Card */}
+          <Card>
         <CardHeader>
           <CardTitle>{editingId ? 'Edit Setup Time' : 'Create New Setup Time'}</CardTitle>
           <CardDescription>
@@ -304,7 +494,16 @@ export default function SetupTimeForm() {
               {/* From Template Task - Required */}
               <div className="space-y-2">
                 <Label htmlFor="from_optimized_task_id">From Template Task *</Label>
-                <Select onValueChange={(value) => setValue('from_optimized_task_id', value)}>
+                <Select 
+                  onValueChange={(value) => {
+                    setValue('from_optimized_task_id', value)
+                    handleFieldChange('from_optimized_task_id', value)
+                  }}
+                  onOpenChange={(open) => {
+                    if (open) handleFieldFocus('from_optimized_task_id')
+                    else handleFieldBlur('from_optimized_task_id', watch('from_optimized_task_id'))
+                  }}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Select from task" />
                   </SelectTrigger>
@@ -322,7 +521,16 @@ export default function SetupTimeForm() {
               {/* To Template Task - Required */}
               <div className="space-y-2">
                 <Label htmlFor="to_optimized_task_id">To Template Task *</Label>
-                <Select onValueChange={(value) => setValue('to_optimized_task_id', value)}>
+                <Select 
+                  onValueChange={(value) => {
+                    setValue('to_optimized_task_id', value)
+                    handleFieldChange('to_optimized_task_id', value)
+                  }}
+                  onOpenChange={(open) => {
+                    if (open) handleFieldFocus('to_optimized_task_id')
+                    else handleFieldBlur('to_optimized_task_id', watch('to_optimized_task_id'))
+                  }}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Select to task" />
                   </SelectTrigger>
@@ -342,7 +550,16 @@ export default function SetupTimeForm() {
               {/* Machine Resource - Required */}
               <div className="space-y-2">
                 <Label htmlFor="machine_resource_id">Machine *</Label>
-                <Select onValueChange={(value) => setValue('machine_resource_id', value)}>
+                <Select 
+                  onValueChange={(value) => {
+                    setValue('machine_resource_id', value)
+                    handleFieldChange('machine_resource_id', value)
+                  }}
+                  onOpenChange={(open) => {
+                    if (open) handleFieldFocus('machine_resource_id')
+                    else handleFieldBlur('machine_resource_id', watch('machine_resource_id'))
+                  }}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Select machine" />
                   </SelectTrigger>
@@ -369,6 +586,9 @@ export default function SetupTimeForm() {
                     required: 'Setup time is required',
                     min: { value: 0, message: 'Setup time must be non-negative' }
                   })}
+                  onFocus={() => handleFieldFocus('setup_time_minutes')}
+                  onBlur={(e) => handleFieldBlur('setup_time_minutes', parseFloat(e.target.value) || 0)}
+                  onChange={(e) => handleFieldChange('setup_time_minutes', parseFloat(e.target.value) || 0)}
                 />
                 {errors.setup_time_minutes && <p className="text-sm text-red-600">{errors.setup_time_minutes.message}</p>}
               </div>
@@ -376,7 +596,16 @@ export default function SetupTimeForm() {
               {/* Setup Type */}
               <div className="space-y-2">
                 <Label htmlFor="setup_type">Setup Type</Label>
-                <Select onValueChange={(value) => setValue('setup_type', value)}>
+                <Select 
+                  onValueChange={(value) => {
+                    setValue('setup_type', value)
+                    handleFieldChange('setup_type', value)
+                  }}
+                  onOpenChange={(open) => {
+                    if (open) handleFieldFocus('setup_type')
+                    else handleFieldBlur('setup_type', watch('setup_type'))
+                  }}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Select setup type" />
                   </SelectTrigger>
@@ -393,7 +622,16 @@ export default function SetupTimeForm() {
               {/* Complexity Level */}
               <div className="space-y-2">
                 <Label htmlFor="complexity_level">Complexity Level</Label>
-                <Select onValueChange={(value) => setValue('complexity_level', value)}>
+                <Select 
+                  onValueChange={(value) => {
+                    setValue('complexity_level', value)
+                    handleFieldChange('complexity_level', value)
+                  }}
+                  onOpenChange={(open) => {
+                    if (open) handleFieldFocus('complexity_level')
+                    else handleFieldBlur('complexity_level', watch('complexity_level'))
+                  }}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Select complexity" />
                   </SelectTrigger>
@@ -410,7 +648,16 @@ export default function SetupTimeForm() {
               {/* Required Operator Skill */}
               <div className="space-y-2">
                 <Label htmlFor="requires_operator_skill">Required Operator Skill</Label>
-                <Select onValueChange={(value) => setValue('requires_operator_skill', value)}>
+                <Select 
+                  onValueChange={(value) => {
+                    setValue('requires_operator_skill', value)
+                    handleFieldChange('requires_operator_skill', value)
+                  }}
+                  onOpenChange={(open) => {
+                    if (open) handleFieldFocus('requires_operator_skill')
+                    else handleFieldBlur('requires_operator_skill', watch('requires_operator_skill'))
+                  }}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Select skill level" />
                   </SelectTrigger>
@@ -437,6 +684,9 @@ export default function SetupTimeForm() {
                     valueAsNumber: true,
                     min: { value: 0, message: 'Cost must be non-negative' }
                   })}
+                  onFocus={() => handleFieldFocus('setup_cost')}
+                  onBlur={(e) => handleFieldBlur('setup_cost', parseFloat(e.target.value) || 0)}
+                  onChange={(e) => handleFieldChange('setup_cost', parseFloat(e.target.value) || 0)}
                 />
                 {errors.setup_cost && <p className="text-sm text-red-600">{errors.setup_cost.message}</p>}
               </div>
@@ -455,6 +705,9 @@ export default function SetupTimeForm() {
                     min: { value: 0, message: 'Impact must be non-negative' },
                     max: { value: 100, message: 'Impact cannot exceed 100%' }
                   })}
+                  onFocus={() => handleFieldFocus('efficiency_impact_percent')}
+                  onBlur={(e) => handleFieldBlur('efficiency_impact_percent', parseFloat(e.target.value) || 0)}
+                  onChange={(e) => handleFieldChange('efficiency_impact_percent', parseFloat(e.target.value) || 0)}
                 />
                 {errors.efficiency_impact_percent && <p className="text-sm text-red-600">{errors.efficiency_impact_percent.message}</p>}
               </div>
@@ -466,6 +719,9 @@ export default function SetupTimeForm() {
                   id="product_family_from"
                   {...register('product_family_from')}
                   placeholder="e.g., Product A, Family X"
+                  onFocus={() => handleFieldFocus('product_family_from')}
+                  onBlur={(e) => handleFieldBlur('product_family_from', e.target.value)}
+                  onChange={(e) => handleFieldChange('product_family_from', e.target.value)}
                 />
               </div>
 
@@ -476,6 +732,9 @@ export default function SetupTimeForm() {
                   id="product_family_to"
                   {...register('product_family_to')}
                   placeholder="e.g., Product B, Family Y"
+                  onFocus={() => handleFieldFocus('product_family_to')}
+                  onBlur={(e) => handleFieldBlur('product_family_to', e.target.value)}
+                  onChange={(e) => handleFieldChange('product_family_to', e.target.value)}
                 />
               </div>
             </div>
@@ -486,7 +745,12 @@ export default function SetupTimeForm() {
                 <Checkbox
                   id="requires_certification"
                   checked={watch('requires_certification')}
-                  onCheckedChange={(checked) => setValue('requires_certification', checked as boolean)}
+                  onCheckedChange={(checked) => {
+                    setValue('requires_certification', checked as boolean)
+                    handleFieldChange('requires_certification', checked)
+                  }}
+                  onFocus={() => handleFieldFocus('requires_certification')}
+                  onBlur={() => handleFieldBlur('requires_certification', watch('requires_certification'))}
                 />
                 <Label htmlFor="requires_certification">Requires Certification</Label>
               </div>
@@ -495,7 +759,12 @@ export default function SetupTimeForm() {
                 <Checkbox
                   id="requires_supervisor_approval"
                   checked={watch('requires_supervisor_approval')}
-                  onCheckedChange={(checked) => setValue('requires_supervisor_approval', checked as boolean)}
+                  onCheckedChange={(checked) => {
+                    setValue('requires_supervisor_approval', checked as boolean)
+                    handleFieldChange('requires_supervisor_approval', checked)
+                  }}
+                  onFocus={() => handleFieldFocus('requires_supervisor_approval')}
+                  onBlur={() => handleFieldBlur('requires_supervisor_approval', watch('requires_supervisor_approval'))}
                 />
                 <Label htmlFor="requires_supervisor_approval">Requires Supervisor Approval</Label>
               </div>
@@ -508,7 +777,11 @@ export default function SetupTimeForm() {
                   Cancel
                 </Button>
               )}
-              <Button type="submit" disabled={isSubmitting || !watch('from_optimized_task_id') || !watch('to_optimized_task_id') || !watch('machine_resource_id')}>
+              <Button 
+                type="submit" 
+                disabled={isSubmitting || !watch('from_optimized_task_id') || !watch('to_optimized_task_id') || !watch('machine_resource_id')}
+                onClick={() => monitor.recordInteraction('submit_button_click')}
+              >
                 {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 {editingId ? 'Update' : 'Create'} Setup Time
               </Button>
@@ -516,6 +789,39 @@ export default function SetupTimeForm() {
           </form>
         </CardContent>
       </Card>
+        </TabsContent>
+        
+        <TabsContent value="bulk" className="space-y-6">
+          <MassUploader
+            tableName="setup_times"
+            entityName="Setup Time"
+            sampleData={sampleSetupTimeData}
+            onUploadComplete={fetchSetupTimes}
+            requiredFields={['from_optimized_task_id', 'to_optimized_task_id', 'machine_resource_id', 'setup_time_minutes']}
+            fieldDescriptions={{
+              from_optimized_task_id: 'Source task ID',
+              to_optimized_task_id: 'Target task ID',
+              machine_resource_id: 'Machine ID (required)',
+              setup_time_minutes: 'Setup duration in minutes',
+              teardown_time_minutes: 'Teardown duration in minutes',
+              changeover_cost: 'Cost of changeover operation'
+            }}
+          />
+        </TabsContent>
+      </Tabs>
+
+      {/* Performance Monitoring Dashboard (Development Mode) */}
+      {process.env.NODE_ENV === 'development' && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Performance Monitoring</CardTitle>
+            <CardDescription>Real-time form performance metrics</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <PerformanceDashboard monitor={monitor} />
+          </CardContent>
+        </Card>
+      )}
 
       {/* Setup Times List */}
       <Card>

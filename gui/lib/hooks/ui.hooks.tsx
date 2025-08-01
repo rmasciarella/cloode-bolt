@@ -171,7 +171,7 @@ export const uiRegistry = new UIHookRegistry()
 export function withUIHooks<P extends object>(
   componentName: string,
   WrappedComponent: React.ComponentType<P>
-): React.ComponentType<P> {
+): React.ForwardRefExoticComponent<React.PropsWithoutRef<P> & React.RefAttributes<any>> {
   return React.forwardRef<any, P>((props, ref) => {
     const [enhancedProps, setEnhancedProps] = React.useState(props)
     const componentRef = React.useRef<any>(null)
@@ -328,7 +328,7 @@ export function withUIHooks<P extends object>(
       return React.createElement(WrappedComponent, {
         ...enhancedProps,
         ref: mergedRef
-      })
+      } as any)
     }
     
     return finalElement

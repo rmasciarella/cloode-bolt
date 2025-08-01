@@ -218,7 +218,7 @@ class PerformanceMonitor {
 // Global instance
 export const performanceMonitor = new PerformanceMonitor()
 
-// React hook for accessing performance data
+// React hook for accessing performance data  
 export function usePerformanceMonitor() {
   return {
     getMetrics: performanceMonitor.getMetrics.bind(performanceMonitor),
@@ -228,6 +228,9 @@ export function usePerformanceMonitor() {
     getPerformanceSummary: performanceMonitor.getPerformanceSummary.bind(performanceMonitor)
   }
 }
+
+// Re-export the comprehensive performance monitoring hook from hooks/use-performance-monitor
+export { usePerformanceMonitor as usePerformanceMonitorHook, performanceUtils } from '@/hooks/use-performance-monitor'
 
 // TypeScript declarations for gtag
 declare global {
