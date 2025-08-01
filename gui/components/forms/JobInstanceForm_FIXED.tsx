@@ -510,7 +510,7 @@ export default function JobInstanceForm() {
                 <thead>
                   <tr className="border-b">
                     <th className="text-left p-2">Name</th>
-                    <th className="text-left p-2">Pattern</th>
+                    <th className="text-left p-2">Template</th>
                     <th className="text-left p-2">Department</th>
                     <th className="text-left p-2">Priority</th>
                     <th className="text-left p-2">Due Date</th>

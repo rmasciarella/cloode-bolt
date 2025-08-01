@@ -22,6 +22,9 @@ type WorkCell = {
   flow_priority: number
   floor_location: string | null
   cell_type: string
+  calendar_id: string | null
+  average_throughput_per_hour: number | null
+  utilization_target_percent: number
   is_active: boolean
   created_at: string
 }
@@ -32,6 +35,7 @@ type Department = {
   code: string
 }
 
+// FIXED: Remove non-existent fields (description, location) and add missing fields
 type WorkCellFormData = {
   name: string
   capacity: number
@@ -40,7 +44,7 @@ type WorkCellFormData = {
   flow_priority: number
   floor_location: string
   cell_type: string
-  target_utilization: number  // FIXED: Use single utilization field as decimal
+  target_utilization: number  // FIXED: Use single utilization field
   calendar_id: string
   average_throughput_per_hour: number
   is_active: boolean
@@ -124,10 +128,11 @@ export default function WorkCellForm() {
   const onSubmit = async (data: WorkCellFormData) => {
     setIsSubmitting(true)
     try {
+      // FIXED: Remove non-existent fields and handle nulls properly
       const formData = {
         name: data.name,
         capacity: data.capacity,
-        department_id: data.department_id || null,
+        department_id: data.department_id || null,  // FIXED: Handle null properly
         wip_limit: data.wip_limit || null,
         target_utilization: data.target_utilization,  // FIXED: No conversion needed
         flow_priority: data.flow_priority,
@@ -184,10 +189,12 @@ export default function WorkCellForm() {
     setValue('capacity', workCell.capacity)
     setValue('department_id', workCell.department_id || '')
     setValue('wip_limit', workCell.wip_limit || 0)
-    setValue('utilization_target_percent', workCell.target_utilization * 100) // Convert decimal to %
+    setValue('target_utilization', workCell.target_utilization)  // FIXED: No conversion
     setValue('flow_priority', workCell.flow_priority)
     setValue('floor_location', workCell.floor_location || '')
     setValue('cell_type', workCell.cell_type)
+    setValue('calendar_id', workCell.calendar_id || '')  // FIXED: Include calendar_id
+    setValue('average_throughput_per_hour', workCell.average_throughput_per_hour || 0)  // FIXED: Include throughput
     setValue('is_active', workCell.is_active)
   }
 
@@ -249,10 +256,13 @@ export default function WorkCellForm() {
                 {errors.name && <p className="text-sm text-red-600">{errors.name.message}</p>}
               </div>
 
-              {/* Cell Type */}
+              {/* Cell Type - FIXED: Add value prop for proper binding */}
               <div className="space-y-2">
                 <Label htmlFor="cell_type">Cell Type</Label>
-                <Select onValueChange={(value) => setValue('cell_type', value)}>
+                <Select 
+                  value={watch('cell_type')} 
+                  onValueChange={(value) => setValue('cell_type', value)}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Select cell type" />
                   </SelectTrigger>
@@ -266,15 +276,18 @@ export default function WorkCellForm() {
                 </Select>
               </div>
 
-              {/* Department */}
+              {/* Department - FIXED: Add value prop and handle null properly */}
               <div className="space-y-2">
                 <Label htmlFor="department_id">Department</Label>
-                <Select onValueChange={(value) => setValue('department_id', value)}>
+                <Select 
+                  value={watch('department_id')} 
+                  onValueChange={(value) => setValue('department_id', value === 'null' ? '' : value)}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Select department" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">No Department</SelectItem>
+                    <SelectItem value="">No Department</SelectItem>
                     {departments.map((dept) => (
                       <SelectItem key={dept.department_id} value={dept.department_id}>
                         {dept.name} ({dept.code})
@@ -325,24 +338,24 @@ export default function WorkCellForm() {
                 {errors.wip_limit && <p className="text-sm text-red-600">{errors.wip_limit.message}</p>}
               </div>
 
-              {/* Target Utilization % */}
+              {/* FIXED: Target Utilization as decimal */}
               <div className="space-y-2">
-                <Label htmlFor="utilization_target_percent">Target Utilization (%)</Label>
+                <Label htmlFor="target_utilization">Target Utilization (0-1)</Label>
                 <Input
-                  id="utilization_target_percent"
+                  id="target_utilization"
                   type="number"
                   min="0"
-                  max="100"
-                  step="0.1"
-                  {...register('utilization_target_percent', { 
+                  max="1"
+                  step="0.01"
+                  {...register('target_utilization', { 
                     valueAsNumber: true,
-                    min: { value: 0, message: 'Target must be between 0 and 100%' },
-                    max: { value: 100, message: 'Target must be between 0 and 100%' }
+                    min: { value: 0, message: 'Target must be between 0 and 1' },
+                    max: { value: 1, message: 'Target must be between 0 and 1' }
                   })}
-                  placeholder="85.0"
+                  placeholder="0.85"
                 />
-                <p className="text-xs text-gray-500">Target capacity utilization percentage for optimization</p>
-                {errors.utilization_target_percent && <p className="text-sm text-red-600">{errors.utilization_target_percent.message}</p>}
+                <p className="text-xs text-gray-500">Target capacity utilization as decimal (0.85 = 85%)</p>
+                {errors.target_utilization && <p className="text-sm text-red-600">{errors.target_utilization.message}</p>}
               </div>
 
               {/* Flow Priority */}
@@ -359,6 +372,35 @@ export default function WorkCellForm() {
                 />
                 <p className="text-xs text-gray-500">Higher numbers = higher priority</p>
                 {errors.flow_priority && <p className="text-sm text-red-600">{errors.flow_priority.message}</p>}
+              </div>
+
+              {/* FIXED: Add Calendar ID field */}
+              <div className="space-y-2">
+                <Label htmlFor="calendar_id">Business Calendar</Label>
+                <Input
+                  id="calendar_id"
+                  {...register('calendar_id')}
+                  placeholder="Calendar ID (optional)"
+                />
+                <p className="text-xs text-gray-500">Associated business calendar for scheduling</p>
+              </div>
+
+              {/* FIXED: Add Average Throughput field */}
+              <div className="space-y-2">
+                <Label htmlFor="average_throughput_per_hour">Avg Throughput/Hour</Label>
+                <Input
+                  id="average_throughput_per_hour"
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  {...register('average_throughput_per_hour', { 
+                    valueAsNumber: true,
+                    min: { value: 0, message: 'Throughput must be non-negative' }
+                  })}
+                  placeholder="10.5"
+                />
+                <p className="text-xs text-gray-500">Average units processed per hour</p>
+                {errors.average_throughput_per_hour && <p className="text-sm text-red-600">{errors.average_throughput_per_hour.message}</p>}
               </div>
             </div>
 
@@ -413,6 +455,7 @@ export default function WorkCellForm() {
                     <th className="text-left p-2">WIP Limit</th>
                     <th className="text-left p-2">Target Util.</th>
                     <th className="text-left p-2">Priority</th>
+                    <th className="text-left p-2">Throughput/Hr</th>
                     <th className="text-left p-2">Status</th>
                     <th className="text-left p-2">Actions</th>
                   </tr>
@@ -436,6 +479,7 @@ export default function WorkCellForm() {
                         <td className="p-2">{cell.wip_limit || '-'}</td>
                         <td className="p-2">{(cell.target_utilization * 100).toFixed(1)}%</td>
                         <td className="p-2">{cell.flow_priority}</td>
+                        <td className="p-2">{cell.average_throughput_per_hour?.toFixed(1) || '-'}</td>
                         <td className="p-2">
                           <span className={`px-2 py-1 rounded-full text-xs ${
                             cell.is_active 

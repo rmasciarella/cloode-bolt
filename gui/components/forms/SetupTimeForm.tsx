@@ -14,21 +14,25 @@ import { Loader2, Edit, Trash2 } from 'lucide-react'
 
 type SetupTime = {
   setup_time_id: string
-  from_template_task_id: string
-  to_template_task_id: string
+  from_optimized_task_id: string
+  to_optimized_task_id: string
   machine_resource_id: string
   setup_time_minutes: number
   setup_type: string
   complexity_level: string
+  requires_operator_skill: string | null
   requires_certification: boolean
+  requires_supervisor_approval: boolean
   setup_cost: number
+  efficiency_impact_percent: number
+  created_at: string
 }
 
-type TemplateTask = {
-  template_task_id: string
+type OptimizedTask = {
+  optimized_task_id: string
   name: string
-  template_id: string
-  template_name: string
+  pattern_id: string
+  pattern_name: string
 }
 
 type Machine = {
@@ -37,8 +41,8 @@ type Machine = {
 }
 
 type SetupTimeFormData = {
-  from_template_task_id: string
-  to_template_task_id: string
+  from_optimized_task_id: string
+  to_optimized_task_id: string
   machine_resource_id: string
   setup_time_minutes: number
   setup_type: string
@@ -106,7 +110,7 @@ export default function SetupTimeForm() {
     setLoading(true)
     try {
       const { data, error } = await supabase
-        .from('optimized_task_modes')
+        .from('optimized_task_setup_times')
         .select(`*`)
         .limit(10)
 
@@ -203,9 +207,9 @@ export default function SetupTimeForm() {
 
       if (editingId) {
         const { error } = await supabase
-          .from('optimized_task_modes')
+          .from('optimized_task_setup_times')
           .update(formData)
-          .eq('mode_id', editingId)
+          .eq('setup_time_id', editingId)
 
         if (error) throw error
 
@@ -215,7 +219,7 @@ export default function SetupTimeForm() {
         })
       } else {
         const { error } = await supabase
-          .from('optimized_task_modes')
+          .from('optimized_task_setup_times')
           .insert([formData])
 
         if (error) throw error
@@ -258,9 +262,9 @@ export default function SetupTimeForm() {
 
     try {
       const { error } = await supabase
-        .from('optimized_task_modes')
+        .from('optimized_task_setup_times')
         .delete()
-        .eq('mode_id', id)
+        .eq('setup_time_id', id)
 
       if (error) throw error
 

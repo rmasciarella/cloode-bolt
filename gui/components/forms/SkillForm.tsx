@@ -148,8 +148,8 @@ export default function SkillForm() {
       const formData = {
         name: data.name,
         description: data.description || null,
-        category: data.category || null,
-        department_id: data.department_id || null,
+        category: data.category && data.category !== '' ? data.category : null,
+        department_id: data.department_id && data.department_id !== '' ? data.department_id : null,
         complexity_level: data.complexity_level,
         training_hours_required: data.training_hours_required,
         certification_required: data.certification_required,
@@ -275,7 +275,7 @@ export default function SkillForm() {
               {/* Category */}
               <div className="space-y-2">
                 <Label htmlFor="category">Category</Label>
-                <Select onValueChange={(value) => setValue('category', value)}>
+                <Select value={watch('category') || ''} onValueChange={(value) => setValue('category', value === 'none' ? '' : value)}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select category" />
                   </SelectTrigger>
@@ -293,7 +293,7 @@ export default function SkillForm() {
               {/* Department */}
               <div className="space-y-2">
                 <Label htmlFor="department_id">Department</Label>
-                <Select onValueChange={(value) => setValue('department_id', value)}>
+                <Select value={watch('department_id') || ''} onValueChange={(value) => setValue('department_id', value === 'none' ? '' : value)}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select department" />
                   </SelectTrigger>
@@ -311,7 +311,7 @@ export default function SkillForm() {
               {/* Complexity Level */}
               <div className="space-y-2">
                 <Label htmlFor="complexity_level">Complexity Level</Label>
-                <Select onValueChange={(value) => setValue('complexity_level', value)}>
+                <Select value={watch('complexity_level')} onValueChange={(value) => setValue('complexity_level', value)}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select complexity" />
                   </SelectTrigger>
@@ -376,7 +376,7 @@ export default function SkillForm() {
               {/* Skill Scarcity Level */}
               <div className="space-y-2">
                 <Label htmlFor="skill_scarcity_level">Scarcity Level</Label>
-                <Select onValueChange={(value) => setValue('skill_scarcity_level', value)}>
+                <Select value={watch('skill_scarcity_level')} onValueChange={(value) => setValue('skill_scarcity_level', value)}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select scarcity" />
                   </SelectTrigger>

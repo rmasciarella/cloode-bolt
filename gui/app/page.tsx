@@ -52,7 +52,7 @@ const navigationSections = [
     icon: Clock,
     items: [
       { key: 'setup-times', label: 'Setup Times', icon: Clock },
-      { key: 'maintenance-windows', label: 'Maintenance Windows', icon: Wrench },
+      { key: 'maintenance-windows', label: 'Maintenance Types', icon: Wrench },
     ]
   },
   {

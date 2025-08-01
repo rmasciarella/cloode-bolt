@@ -244,7 +244,7 @@ export default function MaintenanceTypeForm() {
               <div className="space-y-2">
                 <Label htmlFor="required_skill_level">Required Skill Level</Label>
                 <Select onValueChange={(value) => setValue('required_skill_level', value)}>
-                  <SelectTrigger>
+                  <SelectTrigger id="required_skill_level">
                     <SelectValue placeholder="Select skill level" />
                   </SelectTrigger>
                   <SelectContent>
@@ -278,6 +278,7 @@ export default function MaintenanceTypeForm() {
                 <div className="flex items-center space-x-2">
                   <Checkbox
                     id="is_preventive"
+                    name="is_preventive"
                     checked={watch('is_preventive')}
                     onCheckedChange={(checked) => setValue('is_preventive', checked as boolean)}
                   />
@@ -288,6 +289,7 @@ export default function MaintenanceTypeForm() {
                 <div className="flex items-center space-x-2">
                   <Checkbox
                     id="is_emergency"
+                    name="is_emergency"
                     checked={watch('is_emergency')}
                     onCheckedChange={(checked) => setValue('is_emergency', checked as boolean)}
                   />
@@ -298,6 +300,7 @@ export default function MaintenanceTypeForm() {
                 <div className="flex items-center space-x-2">
                   <Checkbox
                     id="blocks_production"
+                    name="blocks_production"
                     checked={watch('blocks_production')}
                     onCheckedChange={(checked) => setValue('blocks_production', checked as boolean)}
                   />
@@ -308,6 +311,7 @@ export default function MaintenanceTypeForm() {
                 <div className="flex items-center space-x-2">
                   <Checkbox
                     id="allows_emergency_override"
+                    name="allows_emergency_override"
                     checked={watch('allows_emergency_override')}
                     onCheckedChange={(checked) => setValue('allows_emergency_override', checked as boolean)}
                   />
@@ -318,6 +322,7 @@ export default function MaintenanceTypeForm() {
                 <div className="flex items-center space-x-2">
                   <Checkbox
                     id="requires_shutdown"
+                    name="requires_shutdown"
                     checked={watch('requires_shutdown')}
                     onCheckedChange={(checked) => setValue('requires_shutdown', checked as boolean)}
                   />
@@ -328,6 +333,7 @@ export default function MaintenanceTypeForm() {
                 <div className="flex items-center space-x-2">
                   <Checkbox
                     id="requires_external_vendor"
+                    name="requires_external_vendor"
                     checked={watch('requires_external_vendor')}
                     onCheckedChange={(checked) => setValue('requires_external_vendor', checked as boolean)}
                   />

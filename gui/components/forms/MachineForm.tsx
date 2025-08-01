@@ -19,7 +19,21 @@ type Machine = {
   cost_per_hour: number
   department_id: string | null
   cell_id: string
+  setup_time_minutes: number
+  teardown_time_minutes: number
+  maintenance_window_start: number | null
+  maintenance_window_end: number | null
+  last_maintenance_date: string | null
+  next_maintenance_due: string | null
+  maintenance_interval_hours: number
   machine_type: string | null
+  manufacturer: string | null
+  model: string | null
+  year_installed: number | null
+  efficiency_rating: number
+  average_utilization_percent: number | null
+  uptime_target_percent: number
+  calendar_id: string | null
   is_active: boolean
 }
 
@@ -41,10 +55,21 @@ type MachineFormData = {
   cost_per_hour: number
   department_id: string
   cell_id: string
+  setup_time_minutes: number
+  teardown_time_minutes: number
+  maintenance_window_start: number
+  maintenance_window_end: number
+  last_maintenance_date: string
+  next_maintenance_due: string
+  maintenance_interval_hours: number
   machine_type: string
   manufacturer: string
   model: string
   year_installed: number
+  efficiency_rating: number
+  average_utilization_percent: number
+  uptime_target_percent: number
+  calendar_id: string
   is_active: boolean
 }
 
@@ -65,10 +90,21 @@ export default function MachineForm() {
       cost_per_hour: 0,
       department_id: '',
       cell_id: '',
+      setup_time_minutes: 0,
+      teardown_time_minutes: 0,
+      maintenance_window_start: 0,
+      maintenance_window_end: 0,
+      last_maintenance_date: '',
+      next_maintenance_due: '',
+      maintenance_interval_hours: 720,
       machine_type: '',
       manufacturer: '',
       model: '',
       year_installed: new Date().getFullYear(),
+      efficiency_rating: 1.0,
+      average_utilization_percent: 85,
+      uptime_target_percent: 95,
+      calendar_id: '',
       is_active: true
     }
   })
@@ -152,10 +188,21 @@ export default function MachineForm() {
         cost_per_hour: data.cost_per_hour,
         department_id: data.department_id || null,
         cell_id: data.cell_id,
+        setup_time_minutes: data.setup_time_minutes,
+        teardown_time_minutes: data.teardown_time_minutes,
+        maintenance_window_start: data.maintenance_window_start || null,
+        maintenance_window_end: data.maintenance_window_end || null,
+        last_maintenance_date: data.last_maintenance_date || null,
+        next_maintenance_due: data.next_maintenance_due || null,
+        maintenance_interval_hours: data.maintenance_interval_hours,
         machine_type: data.machine_type || null,
         manufacturer: data.manufacturer || null,
         model: data.model || null,
         year_installed: data.year_installed || null,
+        efficiency_rating: data.efficiency_rating,
+        average_utilization_percent: data.average_utilization_percent || null,
+        uptime_target_percent: data.uptime_target_percent,
+        calendar_id: data.calendar_id || null,
         is_active: data.is_active
       }
 
@@ -206,7 +253,21 @@ export default function MachineForm() {
     setValue('cost_per_hour', machine.cost_per_hour)
     setValue('department_id', machine.department_id || '')
     setValue('cell_id', machine.cell_id)
+    setValue('setup_time_minutes', machine.setup_time_minutes)
+    setValue('teardown_time_minutes', machine.teardown_time_minutes)
+    setValue('maintenance_window_start', machine.maintenance_window_start || 0)
+    setValue('maintenance_window_end', machine.maintenance_window_end || 0)
+    setValue('last_maintenance_date', machine.last_maintenance_date || '')
+    setValue('next_maintenance_due', machine.next_maintenance_due || '')
+    setValue('maintenance_interval_hours', machine.maintenance_interval_hours)
     setValue('machine_type', machine.machine_type || '')
+    setValue('manufacturer', machine.manufacturer || '')
+    setValue('model', machine.model || '')
+    setValue('year_installed', machine.year_installed || new Date().getFullYear())
+    setValue('efficiency_rating', machine.efficiency_rating)
+    setValue('average_utilization_percent', machine.average_utilization_percent || 85)
+    setValue('uptime_target_percent', machine.uptime_target_percent)
+    setValue('calendar_id', machine.calendar_id || '')
     setValue('is_active', machine.is_active)
   }
 
@@ -381,6 +442,167 @@ export default function MachineForm() {
                 />
                 {errors.year_installed && <p className="text-sm text-red-600">{errors.year_installed.message}</p>}
               </div>
+
+              {/* Setup Time */}
+              <div className="space-y-2">
+                <Label htmlFor="setup_time_minutes">Setup Time (minutes)</Label>
+                <Input
+                  id="setup_time_minutes"
+                  type="number"
+                  min="0"
+                  {...register('setup_time_minutes', { 
+                    valueAsNumber: true,
+                    min: { value: 0, message: 'Setup time must be non-negative' }
+                  })}
+                />
+                {errors.setup_time_minutes && <p className="text-sm text-red-600">{errors.setup_time_minutes.message}</p>}
+              </div>
+
+              {/* Teardown Time */}
+              <div className="space-y-2">
+                <Label htmlFor="teardown_time_minutes">Teardown Time (minutes)</Label>
+                <Input
+                  id="teardown_time_minutes"
+                  type="number"
+                  min="0"
+                  {...register('teardown_time_minutes', { 
+                    valueAsNumber: true,
+                    min: { value: 0, message: 'Teardown time must be non-negative' }
+                  })}
+                />
+                {errors.teardown_time_minutes && <p className="text-sm text-red-600">{errors.teardown_time_minutes.message}</p>}
+              </div>
+
+              {/* Maintenance Window Start */}
+              <div className="space-y-2">
+                <Label htmlFor="maintenance_window_start">Maintenance Window Start (time units)</Label>
+                <Input
+                  id="maintenance_window_start"
+                  type="number"
+                  min="0"
+                  max="96"
+                  {...register('maintenance_window_start', { 
+                    valueAsNumber: true,
+                    min: { value: 0, message: 'Time must be non-negative' },
+                    max: { value: 96, message: 'Maximum 96 time units (24 hours)' }
+                  })}
+                />
+                {errors.maintenance_window_start && <p className="text-sm text-red-600">{errors.maintenance_window_start.message}</p>}
+              </div>
+
+              {/* Maintenance Window End */}
+              <div className="space-y-2">
+                <Label htmlFor="maintenance_window_end">Maintenance Window End (time units)</Label>
+                <Input
+                  id="maintenance_window_end"
+                  type="number"
+                  min="0"
+                  max="96"
+                  {...register('maintenance_window_end', { 
+                    valueAsNumber: true,
+                    min: { value: 0, message: 'Time must be non-negative' },
+                    max: { value: 96, message: 'Maximum 96 time units (24 hours)' }
+                  })}
+                />
+                {errors.maintenance_window_end && <p className="text-sm text-red-600">{errors.maintenance_window_end.message}</p>}
+              </div>
+
+              {/* Last Maintenance Date */}
+              <div className="space-y-2">
+                <Label htmlFor="last_maintenance_date">Last Maintenance Date</Label>
+                <Input
+                  id="last_maintenance_date"
+                  type="date"
+                  {...register('last_maintenance_date')}
+                />
+              </div>
+
+              {/* Next Maintenance Due */}
+              <div className="space-y-2">
+                <Label htmlFor="next_maintenance_due">Next Maintenance Due</Label>
+                <Input
+                  id="next_maintenance_due"
+                  type="date"
+                  {...register('next_maintenance_due')}
+                />
+              </div>
+
+              {/* Maintenance Interval Hours */}
+              <div className="space-y-2">
+                <Label htmlFor="maintenance_interval_hours">Maintenance Interval (hours)</Label>
+                <Input
+                  id="maintenance_interval_hours"
+                  type="number"
+                  min="1"
+                  {...register('maintenance_interval_hours', { 
+                    valueAsNumber: true,
+                    min: { value: 1, message: 'Interval must be at least 1 hour' }
+                  })}
+                />
+                {errors.maintenance_interval_hours && <p className="text-sm text-red-600">{errors.maintenance_interval_hours.message}</p>}
+              </div>
+
+              {/* Efficiency Rating */}
+              <div className="space-y-2">
+                <Label htmlFor="efficiency_rating">Efficiency Rating</Label>
+                <Input
+                  id="efficiency_rating"
+                  type="number"
+                  min="0.1"
+                  max="2.0"
+                  step="0.1"
+                  {...register('efficiency_rating', { 
+                    valueAsNumber: true,
+                    min: { value: 0.1, message: 'Efficiency must be at least 0.1' },
+                    max: { value: 2.0, message: 'Efficiency cannot exceed 2.0' }
+                  })}
+                />
+                {errors.efficiency_rating && <p className="text-sm text-red-600">{errors.efficiency_rating.message}</p>}
+              </div>
+
+              {/* Average Utilization */}
+              <div className="space-y-2">
+                <Label htmlFor="average_utilization_percent">Average Utilization (%)</Label>
+                <Input
+                  id="average_utilization_percent"
+                  type="number"
+                  min="0"
+                  max="100"
+                  {...register('average_utilization_percent', { 
+                    valueAsNumber: true,
+                    min: { value: 0, message: 'Utilization must be non-negative' },
+                    max: { value: 100, message: 'Utilization cannot exceed 100%' }
+                  })}
+                />
+                {errors.average_utilization_percent && <p className="text-sm text-red-600">{errors.average_utilization_percent.message}</p>}
+              </div>
+
+              {/* Uptime Target */}
+              <div className="space-y-2">
+                <Label htmlFor="uptime_target_percent">Uptime Target (%)</Label>
+                <Input
+                  id="uptime_target_percent"
+                  type="number"
+                  min="0"
+                  max="100"
+                  {...register('uptime_target_percent', { 
+                    valueAsNumber: true,
+                    min: { value: 0, message: 'Uptime target must be non-negative' },
+                    max: { value: 100, message: 'Uptime target cannot exceed 100%' }
+                  })}
+                />
+                {errors.uptime_target_percent && <p className="text-sm text-red-600">{errors.uptime_target_percent.message}</p>}
+              </div>
+
+              {/* Calendar ID */}
+              <div className="space-y-2">
+                <Label htmlFor="calendar_id">Calendar ID</Label>
+                <Input
+                  id="calendar_id"
+                  {...register('calendar_id')}
+                  placeholder="Optional calendar reference"
+                />
+              </div>
             </div>
 
             {/* Active Checkbox */}
@@ -432,6 +654,8 @@ export default function MachineForm() {
                     <th className="text-left p-2">Department</th>
                     <th className="text-left p-2">Capacity</th>
                     <th className="text-left p-2">Cost/Hour</th>
+                    <th className="text-left p-2">Efficiency</th>
+                    <th className="text-left p-2">Uptime Target</th>
                     <th className="text-left p-2">Status</th>
                     <th className="text-left p-2">Actions</th>
                   </tr>
@@ -452,6 +676,8 @@ export default function MachineForm() {
                         </td>
                         <td className="p-2">{machine.capacity}</td>
                         <td className="p-2">${machine.cost_per_hour.toFixed(2)}</td>
+                        <td className="p-2">{machine.efficiency_rating.toFixed(1)}</td>
+                        <td className="p-2">{machine.uptime_target_percent}%</td>
                         <td className="p-2">
                           <span className={`px-2 py-1 rounded-full text-xs ${
                             machine.is_active 

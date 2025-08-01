@@ -21,10 +21,9 @@ type OptimizedTask = {
   is_unattended: boolean
   is_setup: boolean
   sequence_id: string | null
-  requires_certification: boolean
-  min_skill_level: string
   min_operators: number
   max_operators: number
+  operator_efficiency_curve: string | null
   created_at: string
 }
 
@@ -52,18 +51,17 @@ type OptimizedTaskFormData = {
   is_unattended: boolean
   is_setup: boolean
   sequence_id: string
-  requires_certification: boolean
-  min_skill_level: string
   min_operators: number
   max_operators: number
+  operator_efficiency_curve: string
   estimated_duration_minutes: number
 }
 
-const skillLevels = [
-  { value: 'NOVICE', label: 'Novice' },
-  { value: 'COMPETENT', label: 'Competent' },
-  { value: 'PROFICIENT', label: 'Proficient' },
-  { value: 'EXPERT', label: 'Expert' }
+const efficiencyCurves = [
+  { value: 'linear', label: 'Linear' },
+  { value: 'exponential', label: 'Exponential' },
+  { value: 'logarithmic', label: 'Logarithmic' },
+  { value: 'plateau', label: 'Plateau' }
 ]
 
 export default function OptimizedTaskForm() {
@@ -85,10 +83,9 @@ export default function OptimizedTaskForm() {
       is_unattended: false,
       is_setup: false,
       sequence_id: '',
-      requires_certification: false,
-      min_skill_level: 'NOVICE',
       min_operators: 1,
       max_operators: 1,
+      operator_efficiency_curve: 'linear',
       estimated_duration_minutes: 60
     }
   })
@@ -178,10 +175,10 @@ export default function OptimizedTaskForm() {
         is_unattended: data.is_unattended,
         is_setup: data.is_setup,
         sequence_id: data.sequence_id || null,
-        requires_certification: data.requires_certification,
-        min_skill_level: data.min_skill_level,
         min_operators: data.min_operators,
         max_operators: data.max_operators,
+        operator_efficiency_curve: data.operator_efficiency_curve || null,
+        estimated_duration_minutes: data.estimated_duration_minutes
       }
 
       if (editingId) {
@@ -233,8 +230,7 @@ export default function OptimizedTaskForm() {
     setValue('is_unattended', task.is_unattended)
     setValue('is_setup', task.is_setup)
     setValue('sequence_id', task.sequence_id || '')
-    setValue('requires_certification', task.requires_certification)
-    setValue('min_skill_level', task.min_skill_level)
+    setValue('operator_efficiency_curve', task.operator_efficiency_curve || 'linear')
     setValue('min_operators', task.min_operators)
     setValue('max_operators', task.max_operators)
   }
@@ -383,22 +379,6 @@ export default function OptimizedTaskForm() {
                 </Select>
               </div>
 
-              {/* Minimum Skill Level */}
-              <div className="space-y-2">
-                <Label htmlFor="min_skill_level">Minimum Skill Level</Label>
-                <Select onValueChange={(value) => setValue('min_skill_level', value)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select skill level" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {skillLevels.map((skill) => (
-                      <SelectItem key={skill.value} value={skill.value}>
-                        {skill.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
 
               {/* Minimum Operators */}
               <div className="space-y-2">
@@ -457,14 +437,21 @@ export default function OptimizedTaskForm() {
                 <p className="text-xs text-gray-500 ml-2">This is a setup or preparation task</p>
               </div>
 
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="requires_certification"
-                  checked={watch('requires_certification')}
-                  onCheckedChange={(checked) => setValue('requires_certification', checked as boolean)}
-                />
-                <Label htmlFor="requires_certification">Requires Certification</Label>
-                <p className="text-xs text-gray-500 ml-2">Operator must have specific certification</p>
+              <div className="space-y-2">
+                <Label htmlFor="operator_efficiency_curve">Operator Efficiency Curve</Label>
+                <Select value={watch('operator_efficiency_curve')} onValueChange={(value) => setValue('operator_efficiency_curve', value)}>
+                  <SelectTrigger id="operator_efficiency_curve">
+                    <SelectValue placeholder="Select efficiency curve" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {efficiencyCurves.map((curve) => (
+                      <SelectItem key={curve.value} value={curve.value}>
+                        {curve.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-gray-500">How operator efficiency changes with experience</p>
               </div>
             </div>
 
@@ -507,7 +494,7 @@ export default function OptimizedTaskForm() {
                     <th className="text-left p-2">Pattern</th>
                     <th className="text-left p-2">Department</th>
                     <th className="text-left p-2">Operators</th>
-                    <th className="text-left p-2">Skill Level</th>
+                    <th className="text-left p-2">Efficiency Curve</th>
                     <th className="text-left p-2">Flags</th>
                     <th className="text-left p-2">Actions</th>
                   </tr>
@@ -523,7 +510,7 @@ export default function OptimizedTaskForm() {
                         <td className="p-2">{department ? `${department.name} (${department.code})` : '-'}</td>
                         <td className="p-2">{task.min_operators}-{task.max_operators}</td>
                         <td className="p-2">
-                          <span className="capitalize">{task.min_skill_level ? task.min_skill_level.toLowerCase() : '-'}</span>
+                          <span className="capitalize">{task.operator_efficiency_curve || 'linear'}</span>
                         </td>
                         <td className="p-2">
                           <div className="flex flex-wrap gap-1">
@@ -532,9 +519,6 @@ export default function OptimizedTaskForm() {
                             )}
                             {task.is_unattended && (
                               <span className="px-2 py-1 rounded-full text-xs bg-green-100 text-green-800">Unattended</span>
-                            )}
-                            {task.requires_certification && (
-                              <span className="px-2 py-1 rounded-full text-xs bg-orange-100 text-orange-800">Cert Required</span>
                             )}
                           </div>
                         </td>

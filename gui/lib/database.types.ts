@@ -54,12 +54,14 @@ export interface Database {
           updated_at?: string
         }
       }
-      job_templates: {
+      job_optimized_patterns: {
         Row: {
-          template_id: string
+          pattern_id: string
           name: string
           description: string | null
-          version: number
+          task_count: number
+          total_min_duration_minutes: number
+          critical_path_length_minutes: number
           baseline_performance_seconds: number | null
           optimized_performance_seconds: number | null
           speedup_factor: number | null
@@ -71,16 +73,16 @@ export interface Database {
           redundant_constraints_count: number
           is_blessed: boolean
           is_active: boolean
-          department_id: string | null
-          calendar_id: string | null
           created_at: string
           updated_at: string
         }
         Insert: {
-          template_id?: string
+          pattern_id?: string
           name: string
           description?: string | null
-          version?: number
+          task_count: number
+          total_min_duration_minutes?: number
+          critical_path_length_minutes?: number
           baseline_performance_seconds?: number | null
           optimized_performance_seconds?: number | null
           speedup_factor?: number | null
@@ -92,16 +94,16 @@ export interface Database {
           redundant_constraints_count?: number
           is_blessed?: boolean
           is_active?: boolean
-          department_id?: string | null
-          calendar_id?: string | null
           created_at?: string
           updated_at?: string
         }
         Update: {
-          template_id?: string
+          pattern_id?: string
           name?: string
           description?: string | null
-          version?: number
+          task_count?: number
+          total_min_duration_minutes?: number
+          critical_path_length_minutes?: number
           baseline_performance_seconds?: number | null
           optimized_performance_seconds?: number | null
           speedup_factor?: number | null
@@ -113,8 +115,6 @@ export interface Database {
           redundant_constraints_count?: number
           is_blessed?: boolean
           is_active?: boolean
-          department_id?: string | null
-          calendar_id?: string | null
           created_at?: string
           updated_at?: string
         }
